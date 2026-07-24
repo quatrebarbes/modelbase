@@ -50,8 +50,11 @@ async function handleSubmit(submitted: Record<string, unknown>) {
 <template>
   <main>
     <h1>{{ model }} — item {{ item }}</h1>
-    <!-- EX-411 : retour au listing des items du modèle -->
-    <NuxtLink :to="`/connections/${connection}/models/${model}`">← Listing</NuxtLink>
+    <div class="toolbar">
+      <!-- EX-411 : retour au listing des items du modèle -->
+      <NuxtLink :to="`/connections/${connection}/models/${model}`" class="toolbar__link">← Listing</NuxtLink>
+      <button v-if="!editing" type="button" class="btn btn--primary" @click="editing = true">Modifier</button>
+    </div>
 
     <ItemForm
       v-if="editing"
@@ -65,9 +68,6 @@ async function handleSubmit(submitted: Record<string, unknown>) {
       @submit="handleSubmit"
       @cancel="editing = false"
     />
-    <template v-else>
-      <button type="button" @click="editing = true">Modifier</button>
-      <ItemDetail :connection="connection" :values="values" />
-    </template>
+    <ItemDetail v-else :connection="connection" :values="values" />
   </main>
 </template>

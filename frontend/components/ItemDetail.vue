@@ -20,9 +20,9 @@ defineProps<{
 </script>
 
 <template>
-  <dl class="item-detail">
+  <dl class="item-detail field-grid">
     <template v-for="entry in values" :key="entry.column">
-      <dt>{{ entry.column }}</dt>
+      <dt class="field-grid__label">{{ entry.column }}</dt>
       <dd>
         <!-- EX-409 : rendu distinct d'une valeur nulle vs une chaîne vide -->
         <span v-if="entry.is_null" class="item-detail__null">NULL</span>
@@ -51,14 +51,20 @@ defineProps<{
 </template>
 
 <style scoped>
-.item-detail {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.5rem 1rem;
+.item-detail dd {
+  margin: 0;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.item-detail dt {
-  font-weight: 600;
+.item-detail dd pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
 }
 
 .item-detail__null,
@@ -68,6 +74,6 @@ defineProps<{
 }
 
 .item-detail__broken-fk {
-  color: #b91c1c;
+  color: var(--color-error);
 }
 </style>

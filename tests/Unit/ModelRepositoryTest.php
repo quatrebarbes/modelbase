@@ -34,10 +34,16 @@ class ModelRepositoryTest extends TestCase
             $table->timestamps();
         });
 
+        Schema::connection('primary')->create('cogs', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->timestamps();
+        });
+
         DB::connection('primary')->table('widgets')->insert(['name' => 'Foo', 'created_at' => now(), 'updated_at' => now()]);
 
-        $this->putModel('Sprocket');
-        $this->putModel('Gadget');
+        $this->putModel('Sprocket', 'widgets');
+        $this->putModel('Gadget', 'cogs');
     }
 
     protected function tearDown(): void
@@ -47,7 +53,7 @@ class ModelRepositoryTest extends TestCase
         parent::tearDown();
     }
 
-    private function putModel(string $class): void
+    private function putModel(string $class, string $table): void
     {
         $namespace = app()->getNamespace();
 
@@ -62,7 +68,7 @@ class ModelRepositoryTest extends TestCase
         {
             protected \$connection = 'primary';
 
-            protected \$table = 'widgets';
+            protected \$table = '{$table}';
         }
         PHP);
 
@@ -85,6 +91,15 @@ class ModelRepositoryTest extends TestCase
         $repository = new ModelRepository(app(EloquentModelFinder::class));
 
         $names = collect($repository->forConnection('primary', 'gad'))->pluck('name')->values()->all();
+
+        $this->assertSame(['Gadget'], $names);
+    }
+
+    public function test_it_filters_by_table_name_case_insensitively(): void
+    {
+        $repository = new ModelRepository(app(EloquentModelFinder::class));
+
+        $names = collect($repository->forConnection('primary', 'COG'))->pluck('name')->values()->all();
 
         $this->assertSame(['Gadget'], $names);
     }

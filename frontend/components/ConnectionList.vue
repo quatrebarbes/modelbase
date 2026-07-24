@@ -12,53 +12,35 @@ defineProps<{
 </script>
 
 <template>
-  <ul class="connection-list">
-    <li
-      v-for="connection in connections"
-      :key="connection.name"
-      class="connection-list__item"
-      :class="`connection-list__item--${connection.status}`"
-    >
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Nom</th>
+        <th>Driver</th>
+        <th>Statut</th>
+        <th>Modèles</th>
+      </tr>
+    </thead>
+    <tbody>
       <!-- EX-206/EX-207 : seule une connexion disponible navigue vers le module 3 -->
-      <NuxtLink
-        v-if="connection.status === 'available'"
-        :to="`/connections/${connection.name}`"
+      <tr
+        v-for="connection in connections"
+        :key="connection.name"
+        :class="{ 'connection-list__row--unavailable': connection.status !== 'available' }"
+        @click="connection.status === 'available' && navigateTo(`/connections/${connection.name}`)"
       >
-        <strong>{{ connection.name }}</strong>
-        <span>{{ connection.driver }}</span>
-        <span>{{ connection.model_count }} modèle(s)</span>
-      </NuxtLink>
-      <span v-else class="connection-list__unavailable">
-        <strong>{{ connection.name }}</strong>
-        <span>{{ connection.driver }}</span>
-        <span>indisponible</span>
-      </span>
-    </li>
-  </ul>
+        <td>{{ connection.name }}</td>
+        <td>{{ connection.driver }}</td>
+        <td>{{ connection.status === 'available' ? 'disponible' : 'indisponible' }}</td>
+        <td>{{ connection.status === 'available' ? connection.model_count : '—' }}</td>
+      </tr>
+    </tbody>
+  </table>
 </template>
 
 <style scoped>
-.connection-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.connection-list__item a,
-.connection-list__unavailable {
-  display: flex;
-  gap: 0.75rem;
-  align-items: baseline;
-}
-
-.connection-list__item--unavailable {
+.connection-list__row--unavailable {
   opacity: 0.5;
-}
-
-.connection-list__unavailable {
   cursor: not-allowed;
 }
 </style>

@@ -1,0 +1,119 @@
+:root {
+  --color-border: #ddd;
+  --color-border-focus: #999;
+  --color-bg-muted: #f5f5f5;
+  --color-text-muted: #888;
+  --color-error: #b91c1c;
+  --color-pill-bg: #f0f0f2;
+  --color-pill-bg-hover: #e2e2e6;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --radius-sm: 6px;
+  --radius-pill: 999px;
+}
+
+/* Tableaux de listing (bases de données, modèles, items) */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.data-table tbody tr {
+  cursor: pointer;
+}
+
+/* Barre de navigation/recherche au-dessus d'un tableau ou formulaire */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.toolbar__link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.9rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-pill-bg);
+  color: #333;
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: background-color 0.15s ease;
+}
+
+.toolbar__link:hover {
+  background: var(--color-pill-bg-hover);
+}
+
+.toolbar__search {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: 0.9rem;
+  min-width: 16rem;
+}
+
+.toolbar__search:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+}
+
+/* Grille label/valeur à 2 colonnes (fiche détail d'item, formulaire d'item) */
+.field-grid {
+  display: grid;
+  grid-template-columns: minmax(9rem, max-content) minmax(0, 28rem);
+  align-items: start;
+  column-gap: 1.25rem;
+  row-gap: 1rem;
+  max-width: 42rem;
+}
+
+.field-grid__label {
+  padding-top: 0.5rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Boutons d'action (formulaires, fiche détail) */
+.btn {
+  display: inline-block;
+  padding: 0.5rem 1.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-pill-bg);
+  color: #333;
+  font: inherit;
+  font-size: 0.9rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--color-pill-bg-hover);
+}
+
+.btn--primary {
+  border-color: transparent;
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

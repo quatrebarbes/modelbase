@@ -156,6 +156,18 @@ class ModelListingTest extends TestCase
         $this->assertSame(['DoohickeyAlias'], $names);
     }
 
+    public function test_it_filters_the_listing_by_table_name(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('primary', ['search' => 'widgets']));
+
+        $response->assertOk();
+        $names = collect($response->json('data'))->pluck('name')->values()->all();
+
+        $this->assertEqualsCanonicalizing(['Doohickey', 'DoohickeyAlias'], $names);
+    }
+
     public function test_navigation_is_blocked_for_an_unavailable_connection(): void
     {
         $user = UserFactory::new()->create();

@@ -13,7 +13,7 @@ const columns = computed(() => (props.items.length ? Object.keys(props.items[0])
 <template>
   <!-- EX-404 : message dédié, pas d'erreur, si le modèle ne contient aucun item -->
   <p v-if="items.length === 0">Aucun item disponible pour ce modèle.</p>
-  <table v-else class="item-list">
+  <table v-else class="data-table">
     <thead>
       <tr>
         <th v-for="column in columns" :key="column">{{ column }}</th>
@@ -24,7 +24,6 @@ const columns = computed(() => (props.items.length ? Object.keys(props.items[0])
       <tr
         v-for="item in items"
         :key="String(item.id)"
-        class="item-list__row"
         @click="navigateTo(`/connections/${connection}/models/${model}/items/${item.id}`)"
       >
         <td v-for="column in columns" :key="column">{{ item[column] }}</td>
@@ -32,21 +31,3 @@ const columns = computed(() => (props.items.length ? Object.keys(props.items[0])
     </tbody>
   </table>
 </template>
-
-<style scoped>
-.item-list {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.item-list th,
-.item-list td {
-  text-align: left;
-  padding: 0.35rem 0.75rem;
-  border-bottom: 1px solid #ddd;
-}
-
-.item-list__row {
-  cursor: pointer;
-}
-</style>

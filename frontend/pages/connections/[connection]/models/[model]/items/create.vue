@@ -36,7 +36,9 @@ async function handleSubmit(values: Record<string, unknown>) {
 <template>
   <main>
     <h1>{{ model }} — nouvel item</h1>
-    <NuxtLink :to="`/connections/${connection}/models/${model}`">← Listing</NuxtLink>
+    <div class="toolbar">
+      <NuxtLink :to="`/connections/${connection}/models/${model}`" class="toolbar__link">← Listing</NuxtLink>
+    </div>
 
     <ItemForm
       :columns="columns"

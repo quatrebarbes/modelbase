@@ -14,9 +14,9 @@ const page = defineModel<number>('page', { required: true })
 
 <template>
   <div class="item-pagination">
-    <button type="button" :disabled="page <= 1" @click="page--">Précédent</button>
+    <button type="button" class="btn" :disabled="page <= 1" @click="page--">&lt;</button>
     <span>Page {{ meta.current_page }} / {{ meta.last_page }} ({{ meta.total }} item(s))</span>
-    <button type="button" :disabled="page >= meta.last_page" @click="page++">Suivant</button>
+    <button type="button" class="btn" :disabled="page >= meta.last_page" @click="page++">&gt;</button>
   </div>
 </template>
 

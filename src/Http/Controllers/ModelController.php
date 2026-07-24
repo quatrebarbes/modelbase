@@ -14,7 +14,8 @@ class ModelController extends Controller
 
     /**
      * EX-301/EX-302/EX-304 : liste les modèles Eloquent déclarés pour la
-     * connexion, filtrables par nom via le paramètre de requête `search`.
+     * connexion, filtrables par nom ou par nom de table via le paramètre de
+     * requête `search`.
      */
     public function index(Request $request, string $connection)
     {

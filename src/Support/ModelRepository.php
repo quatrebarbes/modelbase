@@ -5,10 +5,10 @@ namespace Quatrebarbes\Modelbase\Support;
 /**
  * Assemble le listing des modèles Eloquent déclarés par l'application hôte
  * pour une connexion donnée (EX-301), avec nom, nombre d'items et nombre de
- * colonnes de la table associée (EX-302), filtrable par nom (EX-304). Deux
- * classes Eloquent déclarées pointant vers la même table donnent deux
- * entrées distinctes : le listing est construit par classe, jamais dédupliqué
- * par table.
+ * colonnes de la table associée (EX-302), filtrable par nom ou par nom de
+ * table (EX-304). Deux classes Eloquent déclarées pointant vers la même
+ * table donnent deux entrées distinctes : le listing est construit par
+ * classe, jamais dédupliqué par table.
  */
 class ModelRepository
 {
@@ -27,6 +27,7 @@ class ModelRepository
                 $search !== null && $search !== '',
                 fn ($models) => $models->filter(
                     fn (array $model) => str_contains(strtolower($model['name']), strtolower($search))
+                        || str_contains(strtolower($model['table']), strtolower($search))
                 )
             )
             ->values()

@@ -64,103 +64,160 @@ function handleSubmit(): void {
 </script>
 
 <template>
-  <form class="item-form" @submit.prevent="handleSubmit">
+  <form class="item-form field-grid" @submit.prevent="handleSubmit">
     <div v-for="column in columns" :key="column.column" class="item-form__field">
-      <label :for="`field-${column.column}`">
+      <label :for="`field-${column.column}`" class="field-grid__label">
         {{ column.column }}
         <!-- EX-416 : colonnes techniques affichées mais non modifiables -->
         <span v-if="column.technical" class="item-form__technical">(technique, lecture seule)</span>
       </label>
 
-      <!-- EX-415 : sélecteur d'item existant pour une colonne FK -->
-      <ItemPicker
-        v-if="column.type === 'foreign_key' && column.foreign_key?.model && !column.technical"
-        v-model="values[column.column]"
-        :connection="connection"
-        :model="column.foreign_key.model"
-        nullable
-      />
+      <div class="item-form__control">
+        <!-- EX-415 : sélecteur d'item existant pour une colonne FK -->
+        <ItemPicker
+          v-if="column.type === 'foreign_key' && column.foreign_key?.model && !column.technical"
+          v-model="values[column.column]"
+          :connection="connection"
+          :model="column.foreign_key.model"
+          nullable
+        />
 
-      <input
-        v-else-if="column.type === 'boolean'"
-        :id="`field-${column.column}`"
-        type="checkbox"
-        :checked="Boolean(values[column.column])"
-        :disabled="column.technical || disabled"
-        @change="values[column.column] = ($event.target as HTMLInputElement).checked"
-      >
+        <input
+          v-else-if="column.type === 'boolean'"
+          :id="`field-${column.column}`"
+          type="checkbox"
+          class="item-form__checkbox"
+          :checked="Boolean(values[column.column])"
+          :disabled="column.technical || disabled"
+          @change="values[column.column] = ($event.target as HTMLInputElement).checked"
+        >
 
-      <input
-        v-else-if="column.type === 'number'"
-        :id="`field-${column.column}`"
-        type="number"
-        step="any"
-        :value="values[column.column] ?? ''"
-        :disabled="column.technical || disabled"
-        @input="values[column.column] = ($event.target as HTMLInputElement).value"
-      >
+        <input
+          v-else-if="column.type === 'number'"
+          :id="`field-${column.column}`"
+          type="number"
+          step="any"
+          :value="values[column.column] ?? ''"
+          :disabled="column.technical || disabled"
+          @input="values[column.column] = ($event.target as HTMLInputElement).value"
+        >
 
-      <input
-        v-else-if="column.type === 'date'"
-        :id="`field-${column.column}`"
-        type="datetime-local"
-        :value="values[column.column] ?? ''"
-        :disabled="column.technical || disabled"
-        @input="values[column.column] = ($event.target as HTMLInputElement).value"
-      >
+        <input
+          v-else-if="column.type === 'date'"
+          :id="`field-${column.column}`"
+          type="datetime-local"
+          :value="values[column.column] ?? ''"
+          :disabled="column.technical || disabled"
+          @input="values[column.column] = ($event.target as HTMLInputElement).value"
+        >
 
-      <textarea
-        v-else-if="column.type === 'json'"
-        :id="`field-${column.column}`"
-        :value="jsonDrafts[column.column]"
-        :disabled="column.technical || disabled"
-        rows="4"
-        @input="updateJsonDraft(column.column, ($event.target as HTMLTextAreaElement).value)"
-      />
+        <textarea
+          v-else-if="column.type === 'json'"
+          :id="`field-${column.column}`"
+          :value="jsonDrafts[column.column]"
+          :disabled="column.technical || disabled"
+          rows="4"
+          @input="updateJsonDraft(column.column, ($event.target as HTMLTextAreaElement).value)"
+        />
 
-      <input
-        v-else
-        :id="`field-${column.column}`"
-        type="text"
-        :value="values[column.column] ?? ''"
-        :disabled="column.technical || disabled"
-        @input="values[column.column] = ($event.target as HTMLInputElement).value"
-      >
+        <input
+          v-else
+          :id="`field-${column.column}`"
+          type="text"
+          :value="values[column.column] ?? ''"
+          :disabled="column.technical || disabled"
+          @input="values[column.column] = ($event.target as HTMLInputElement).value"
+        >
 
-      <p v-if="column.type === 'json' && jsonErrors[column.column]" class="item-form__error">JSON invalide.</p>
-      <!-- EX-417 : erreurs de validation natives de la colonne, remontées telles quelles -->
-      <p v-for="message in (errors[column.column] ?? [])" :key="message" class="item-form__error">{{ message }}</p>
+        <p v-if="column.type === 'json' && jsonErrors[column.column]" class="item-form__error">JSON invalide.</p>
+        <!-- EX-417 : erreurs de validation natives de la colonne, remontées telles quelles -->
+        <p v-for="message in (errors[column.column] ?? [])" :key="message" class="item-form__error">{{ message }}</p>
+      </div>
     </div>
 
-    <p v-for="message in (errors._general ?? [])" :key="message" class="item-form__error">{{ message }}</p>
+    <p v-for="message in (errors._general ?? [])" :key="message" class="item-form__error item-form__error--general">{{ message }}</p>
 
     <div class="item-form__actions">
-      <button type="submit" :disabled="disabled">{{ submitLabel }}</button>
-      <button v-if="cancellable" type="button" :disabled="disabled" @click="emit('cancel')">Annuler</button>
+      <button type="submit" class="btn btn--primary" :disabled="disabled">
+        {{ submitLabel }}
+      </button>
+      <button
+        v-if="cancellable"
+        type="button"
+        class="btn"
+        :disabled="disabled"
+        @click="emit('cancel')"
+      >
+        Annuler
+      </button>
     </div>
   </form>
 </template>
 
 <style scoped>
 .item-form__field {
-  margin-bottom: 0.75rem;
+  display: contents;
 }
 
 .item-form__technical {
+  display: block;
+  font-weight: 400;
   font-size: 0.8rem;
   font-style: italic;
   opacity: 0.6;
 }
 
+.item-form__control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.item-form__control input:not(.item-form__checkbox),
+.item-form__control select,
+.item-form__control textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+}
+
+.item-form__control input:not(.item-form__checkbox):focus,
+.item-form__control select:focus,
+.item-form__control textarea:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+}
+
+.item-form__control input:disabled,
+.item-form__control select:disabled,
+.item-form__control textarea:disabled {
+  background: var(--color-bg-muted);
+  color: var(--color-text-muted);
+}
+
+.item-form__checkbox {
+  justify-self: start;
+  margin-top: 0.55rem;
+}
+
 .item-form__error {
-  color: #b91c1c;
+  color: var(--color-error);
   font-size: 0.85rem;
-  margin: 0.15rem 0 0;
+  margin: 0;
+}
+
+.item-form__error--general {
+  grid-column: 1 / -1;
 }
 
 .item-form__actions {
+  grid-column: 1 / -1;
   display: flex;
   gap: 0.5rem;
-  margin-top: 1rem;
+  margin-top: 0.5rem;
 }
 </style>

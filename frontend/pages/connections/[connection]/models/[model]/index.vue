@@ -23,9 +23,16 @@ const meta = computed(() => data.value?.meta)
 <template>
   <main>
     <h1>Items — {{ model }}</h1>
-    <NuxtLink :to="`/connections/${connection}`">← Modèles</NuxtLink>
-    <!-- EX-412 : point d'entrée vers la création d'un nouvel item -->
-    <NuxtLink :to="`/connections/${connection}/models/${model}/items/create`">+ Nouvel item</NuxtLink>
+    <div class="toolbar">
+      <NuxtLink :to="`/connections/${connection}`" class="toolbar__link">← Modèles</NuxtLink>
+      <!-- EX-412 : point d'entrée vers la création d'un nouvel item -->
+      <NuxtLink
+        :to="`/connections/${connection}/models/${model}/items/create`"
+        class="btn btn--primary"
+      >
+        + Nouvel item
+      </NuxtLink>
+    </div>
     <ItemList :connection="connection" :model="model" :items="items" />
     <ItemPagination v-if="meta && meta.total > 0" v-model:page="page" :meta="meta" />
   </main>
