@@ -1,6 +1,6 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-24.
+Dernière mise à jour : 2026-07-24 (Phase 2).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
@@ -22,7 +22,7 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 |-------|-------------------------------|-----------|
 | 0     | Socle technique               | ✅ fait    |
 | 1     | Architecture générale (accès) | ✅ fait    |
-| 2     | Bases de données              | ⬜ à faire |
+| 2     | Bases de données              | ✅ fait    |
 | 3     | Modèles                       | ⬜ à faire |
 | 4a    | Items — listing & détail      | ⬜ à faire |
 | 4b    | Items — création/édition      | ⬜ à faire |
@@ -61,13 +61,19 @@ Points d'attention pour la suite :
 
 ## Phase 2 — Bases de données (module 2)
 
-- [ ] Endpoint `GET /connections` listant les connexions de `config/database.php` (EX-201)
-- [ ] Pour chaque connexion : nom, driver, statut, nombre de modèles (EX-202) — exclusion des infos sensibles host/port/identifiants (EX-203)
-- [ ] Détection de disponibilité d'une connexion (tentative de connexion à chaud, sans cache) (EX-204, EX-208)
-- [ ] Comptage des modèles limité aux connexions disponibles (EX-205)
-- [ ] Blocage de la navigation vers une connexion indisponible côté API (EX-206)
-- [ ] Front Nuxt : liste des connexions, état visuel disponible/indisponible, navigation vers module 3 (EX-207)
-- Tests Feature : listing, masquage des infos sensibles, connexion injoignable simulée, recalcul à chaque appel (pas de cache)
+- [x] Endpoint `GET /connections` listant les connexions de `config/database.php` (EX-201) — `Quatrebarbes\Modelbase\Http\Controllers\ConnectionController@index`, route nommée `modelbase.api.connections.index`
+- [x] Pour chaque connexion : nom, driver, statut, nombre de modèles (EX-202) — exclusion des infos sensibles host/port/identifiants (EX-203) — `Support\ConnectionRepository` n'expose que `name`/`driver`/`status`/`model_count`, jamais la config brute de la connexion
+- [x] Détection de disponibilité d'une connexion (tentative de connexion à chaud, sans cache) (EX-204, EX-208) — `Support\ConnectionAvailability` : `DB::purge()` avant/après un `DB::connection($name)->getPdo()` en try/catch, pour ne jamais réutiliser un statut déjà résolu plus tôt dans la requête
+- [x] Comptage des modèles limité aux connexions disponibles (EX-205) — `model_count` vaut `null` (non calculé) pour une connexion indisponible ; le comptage s'appuie sur `Support\EloquentModelFinder` (scan de `app/Models`, cf. point d'attention ci-dessous)
+- [x] Blocage de la navigation vers une connexion indisponible côté API (EX-206) — `Http\Middleware\EnsureConnectionIsNavigable` : 404 si connexion inconnue/exclue, 409 si connexion configurée mais injoignable ; middleware prêt à être appliqué aux routes imbriquées `/connections/{connection}/...` des modules 3-4, testé dès maintenant via une route sonde (même approche que `Authenticate` en Phase 1)
+- [x] Front Nuxt : liste des connexions, état visuel disponible/indisponible, navigation vers module 3 (EX-207) — `frontend/pages/index.vue` + `frontend/components/ConnectionList.vue` (remplace le squelette `ApiStatus.vue` de la Phase 0, supprimé) ; lien de navigation uniquement sur les connexions disponibles, vers `/connections/{name}` (page à créer en Phase 3)
+- Tests Feature : `tests/Feature/ConnectionListingTest.php` (listing, masquage des infos sensibles, connexion injoignable simulée — hôte local sur un port fermé plutôt qu'un hôte non routable, pour un échec de connexion immédiat — recalcul à chaque appel sans cache), `tests/Feature/ConnectionNavigabilityTest.php` (sonde `EnsureConnectionIsNavigable`)
+- Test Unit : `tests/Unit/EloquentModelFinderTest.php` (découverte des modèles concrets, exclusion des classes abstraites/non-Eloquent, filtrage par connexion, répertoire `app/Models` absent)
+
+Points d'attention pour la suite :
+- **Mécanisme de découverte des modèles introduit en avance de phase** : `Support\EloquentModelFinder` (scan de `app/Models`, filtrage par connexion) a dû être construit dès la Phase 2 pour permettre le comptage de modèles (EX-202/EX-205), alors qu'il est nominalement prévu en Phase 3 (EX-301). La Phase 3 réutilisera cette même classe pour le listing détaillé (nom, colonnes, items) plutôt que d'en récrire une — seul `EloquentModelFinder::all()`/`forConnection()` est à étendre si besoin (ex. gestion des sous-répertoires, classmap composer en complément du scan de répertoire).
+- **Bug corrigé, transverse à toutes les phases** : les routes du plug-in (`routes/api.php`) n'étaient rattachées à aucun groupe de middleware Laravel — sans le groupe `web`, aucune session n'était démarrée et le guard d'auth de l'app hôte (EX-101, session-based par défaut) ne voyait donc jamais un utilisateur comme connecté lors d'un vrai appel HTTP, alors que les tests Feature passaient malgré tout car `actingAs()` contourne le mécanisme de session. Corrigé en ajoutant `'web'` au groupe de middleware ; `tests/TestCase.php` fixe désormais une `app.key` de test (requise par `EncryptCookies`, membre du groupe `web`) pour que les futurs tests Feature de toutes les phases fonctionnent avec ce groupe. Point de vigilance pour la Phase 4b : le groupe `web` inclut la vérification CSRF, à prendre en compte côté front (jeton `XSRF-TOKEN`) pour les endpoints de mutation (POST/PATCH/DELETE).
+- Vérifié manuellement contre l'environnement `docker-compose` réel (pas seulement en tests unitaires/Feature) : `GET /connections` reflète correctement mysql (3 modèles : `Category`, `Product`, `User`), pgsql (2 modèles : `Author`, `Article`), mariadb (disponible, alias du même serveur mysql via les mêmes variables d'env `DB_HOST`/`DB_PORT`), sqlsrv (indisponible, aucun serveur), et sqlite (indisponible dans l'environnement de démo — `DB_DATABASE=demo`, définie pour mysql dans `demo/.env`, écrase par effet de bord le chemin par défaut du fichier sqlite ; comportement correctement détecté comme indisponible, non bloquant car aucun modèle de démo n'utilise cette connexion, mais `demo/.env` mériterait un nettoyage si sqlite devait un jour servir à la démo).
 
 ## Phase 3 — Modèles (module 3)
 

@@ -1,12 +1,14 @@
 <script setup lang="ts">
-// Squelette Phase 0 : sera remplacé par le listing des connexions (module 2).
+// EX-207 : liste des connexions, point d'entrée du parcours (module 2).
 const api = useApiClient()
-const { data } = await useAsyncData('ping', () => api('/ping'))
+const { data } = await useAsyncData('connections', () => api('/connections'))
+
+const connections = computed(() => data.value?.data ?? [])
 </script>
 
 <template>
   <main>
-    <h1>Modelbase</h1>
-    <ApiStatus :status="data?.status" />
+    <h1>Bases de données</h1>
+    <ConnectionList :connections="connections" />
   </main>
 </template>
