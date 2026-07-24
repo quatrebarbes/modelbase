@@ -113,7 +113,22 @@
   background: var(--color-primary-hover);
 }
 
+.btn--danger {
+  border-color: transparent;
+  background: var(--color-error);
+  color: #fff;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: #991b1b;
+}
+
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.toolbar__actions {
+  display: flex;
+  gap: 0.6rem;
 }

@@ -1,6 +1,6 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-24 (Phase 4b).
+Dernière mise à jour : 2026-07-24 (Phase 4c).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
@@ -26,7 +26,7 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 | 3     | Modèles                       | ✅ fait    |
 | 4a    | Items — listing & détail      | ✅ fait    |
 | 4b    | Items — création/édition      | ✅ fait    |
-| 4c    | Items — suppression           | ⬜ à faire |
+| 4c    | Items — suppression           | ✅ fait    |
 | 5     | Points ouverts / backlog      | ⬜ à faire |
 
 ---
@@ -138,10 +138,15 @@ Points d'attention pour la suite :
 
 ## Phase 4c — Items : suppression (module 4, partie 3)
 
-- [ ] Endpoint `DELETE .../items/{id}` (EX-418)
-- [ ] Confirmation obligatoire côté front avant suppression (EX-419)
-- [ ] Gestion erreur d'intégrité référentielle (FK entrante) : affichage de l'erreur BDD après confirmation, pas de suppression forcée (EX-420)
-- Tests Feature : suppression simple, suppression bloquée par contrainte FK
+- [x] Endpoint `DELETE .../items/{id}` (EX-418) — `ItemController@destroy`, route `...items.destroy` ; `ItemRepository::delete()` fait un simple `DB::table()->where($key, $id)->delete()` (même approche par query builder brut que create/update, cf. Phase 4b), 404 si l'item n'existe pas
+- [x] Confirmation obligatoire côté front avant suppression (EX-419) — `window.confirm()` dans `handleDelete()` (page détail d'item) ; pas de modal dédiée, la suppression est une action ponctuelle sur un seul item (cohérent avec la limite « pas de suppression en masse »)
+- [x] Gestion erreur d'intégrité référentielle (FK entrante) : affichage de l'erreur BDD après confirmation, pas de suppression forcée (EX-420) — la `QueryException` levée par le moteur de BDD est traduite via `DatabaseErrorTranslator::translate()` (déjà construit en Phase 4b) ; si le motif est `foreign_key`, `ItemRepository::toDeletionException()` lève une nouvelle `ItemDeletionException` (message brut du moteur inclus), traduite en 409 par le contrôleur — jamais de suppression forcée (pas de `onDelete('cascade')` ajouté ni de retry sans la ligne bloquante)
+- Tests Feature : `tests/Feature/ItemDeletionTest.php` (suppression simple avec vérification que la ligne a bien disparu, 404 sur item inconnu, 409 sur suppression bloquée par une contrainte FK entrante avec vérification que la ligne référencée existe toujours)
+
+Points d'attention pour la suite :
+- **`toValidationException` (Phase 4b) vs `toDeletionException` (cette phase) traduisent la même contrainte `foreign_key` différemment, à dessein** : sur create/update, la colonne fautive appartient à l'item écrit lui-même (valeur de FK invalide) — message reformulé par colonne. Sur delete, la colonne fautive appartient à la table qui référence encore l'item supprimé, pas à l'item lui-même — EX-420 demande explicitement d'afficher « l'erreur d'intégrité référentielle renvoyée par la base de données », donc le message brut du moteur est utilisé tel quel plutôt qu'une reformulation par colonne.
+- **Sqlite n'applique aucune contrainte de clé étrangère par défaut**, contrairement à mysql/pgsql : `SQLiteConnector::configureForeignKeyConstraints()` ne touche au `PRAGMA foreign_keys` que si la clé `foreign_key_constraints` est explicitement présente dans la config de connexion. Les tests sqlite précédents (Phase 4a/4b) n'en avaient pas besoin (aucun test n'y déclenchait réellement une violation de FK) ; `ItemDeletionTest` l'active explicitement pour vérifier réellement EX-420 plutôt que de mocker la `QueryException` (déjà fait côté unitaire dans `DatabaseErrorTranslatorTest`).
+- **Vérifié manuellement contre mysql réel (docker-compose)**, au-delà des tests sqlite : suppression d'un item non référencé (succès), suppression d'un item inconnu (pas d'exception, `false` renvoyé) et tentative de suppression d'une catégorie de démo référencée par des produits — cette dernière n'a **pas** levé d'`ItemDeletionException`, la contrainte `products.category_id` du schéma de démo étant déclarée `cascadeOnDelete()` (pas de blocage à traduire, la BDD cascade elle-même). Confirme que le code ne fait que relayer le comportement réel de la BDD, sans jamais le forcer ni le contourner dans un sens ou dans l'autre — la donnée de démo mysql, altérée par ce test manuel (cascade réelle), a été restaurée via `php artisan db:wipe --database=pgsql --force && php artisan migrate:fresh --force && php artisan db:seed --force` (séquence documentée dans `docker/app-entrypoint.sh`, cf. Phase 0).
 
 ## Phase 5 — Points ouverts / hors périmètre
 

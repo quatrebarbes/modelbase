@@ -180,6 +180,37 @@ class ItemRepository
     }
 
     /**
+     * EX-418/EX-420 : supprime un item existant. Renvoie `false` si l'item
+     * n'existe pas (cf. ItemController::destroy, qui traduit ce cas en 404).
+     * Aucune suppression forcée (EX-420) : si l'item est encore référencé par
+     * une clé étrangère d'un autre enregistrement, la QueryException levée
+     * par le moteur de BDD est traduite en ItemDeletionException plutôt que
+     * d'être contournée (ex. suppression en cascade).
+     *
+     * @throws ItemDeletionException
+     */
+    public function delete(string $connection, string $model, string $id): bool
+    {
+        $class = $this->resolver->resolve($connection, $model);
+        $instance = new $class;
+        $db = $instance->getConnection();
+        $table = $instance->getTable();
+        $key = $instance->getKeyName();
+
+        if (! $db->table($table)->where($key, $id)->exists()) {
+            return false;
+        }
+
+        try {
+            $db->table($table)->where($key, $id)->delete();
+        } catch (QueryException $exception) {
+            throw $this->toDeletionException($exception, $db, $table);
+        }
+
+        return true;
+    }
+
+    /**
      * @return array{0: Connection, 1: string}
      */
     private function tableFor(string $connection, string $model): array
@@ -294,6 +325,29 @@ class ItemRepository
         return new ItemValidationException([
             $column => [$this->friendlyMessage($translated['rule'], $translated['column'], $translated['message'])],
         ]);
+    }
+
+    /**
+     * EX-420 : traduit la QueryException levée par une suppression bloquée
+     * par une contrainte de clé étrangère entrante (un autre enregistrement
+     * référence encore cet item) en ItemDeletionException. Contrairement à
+     * toValidationException(), la colonne fautive appartient à la table qui
+     * référence l'item supprimé, pas à l'item lui-même — seul le message brut
+     * du moteur de BDD est donc affiché (EX-420 : « affiche ... l'erreur
+     * d'intégrité référentielle renvoyée par la base de données »), plutôt
+     * qu'un message reformulé par colonne comme pour la validation.
+     */
+    private function toDeletionException(QueryException $exception, Connection $db, string $table): ItemDeletionException
+    {
+        $translated = $this->errors->translate($exception, $db->getDriverName(), $table);
+
+        if ($translated['rule'] !== 'foreign_key') {
+            throw $exception;
+        }
+
+        return new ItemDeletionException(
+            "Suppression impossible : cet item est encore référencé par d'autres enregistrements ({$translated['message']})."
+        );
     }
 
     private function friendlyMessage(string $rule, ?string $column, string $raw): string

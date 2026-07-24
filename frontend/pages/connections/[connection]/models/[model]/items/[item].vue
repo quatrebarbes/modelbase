@@ -26,6 +26,8 @@ const initialValues = computed(() => Object.fromEntries(
 const editing = ref(false)
 const errors = ref<Record<string, string[]>>({})
 const submitting = ref(false)
+const deleting = ref(false)
+const deleteError = ref<string | null>(null)
 
 async function handleSubmit(submitted: Record<string, unknown>) {
   submitting.value = true
@@ -45,6 +47,24 @@ async function handleSubmit(submitted: Record<string, unknown>) {
     submitting.value = false
   }
 }
+
+// EX-418/EX-419/EX-420 : suppression, avec confirmation préalable obligatoire
+// et affichage de l'éventuelle erreur d'intégrité référentielle renvoyée par
+// l'API (409), sans jamais forcer la suppression.
+async function handleDelete() {
+  if (!window.confirm('Supprimer définitivement cet item ?')) return
+
+  deleting.value = true
+  deleteError.value = null
+
+  try {
+    await api(`/connections/${connection}/models/${model}/items/${item}`, { method: 'DELETE' })
+    await navigateTo(`/connections/${connection}/models/${model}`)
+  } catch (error: any) {
+    deleteError.value = error?.data?.message ?? 'La suppression a échoué.'
+    deleting.value = false
+  }
+}
 </script>
 
 <template>
@@ -53,8 +73,15 @@ async function handleSubmit(submitted: Record<string, unknown>) {
     <div class="toolbar">
       <!-- EX-411 : retour au listing des items du modèle -->
       <NuxtLink :to="`/connections/${connection}/models/${model}`" class="toolbar__link">← Listing</NuxtLink>
-      <button v-if="!editing" type="button" class="btn btn--primary" @click="editing = true">Modifier</button>
+      <div v-if="!editing" class="toolbar__actions">
+        <button type="button" class="btn btn--primary" @click="editing = true">Modifier</button>
+        <!-- EX-418/EX-419 : confirmation obligatoire avant suppression -->
+        <button type="button" class="btn btn--danger" :disabled="deleting" @click="handleDelete">Supprimer</button>
+      </div>
     </div>
+
+    <!-- EX-420 : erreur d'intégrité référentielle renvoyée par l'API après confirmation -->
+    <p v-if="deleteError" class="item-detail__delete-error">{{ deleteError }}</p>
 
     <ItemForm
       v-if="editing"
@@ -71,3 +98,9 @@ async function handleSubmit(submitted: Record<string, unknown>) {
     <ItemDetail v-else :connection="connection" :values="values" />
   </main>
 </template>
+
+<style scoped>
+.item-detail__delete-error {
+  color: var(--color-error);
+}
+</style>

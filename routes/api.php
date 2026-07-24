@@ -57,6 +57,10 @@ Route::prefix(config('modelbase.route_prefix').'/api')
                         // EX-413 : modification d'un item existant (PUT/PATCH acceptés).
                         Route::match(['put', 'patch'], '/items/{item}', [ItemController::class, 'update'])
                             ->name('connections.models.items.update');
+
+                        // EX-418/EX-420 : suppression d'un item existant.
+                        Route::delete('/items/{item}', [ItemController::class, 'destroy'])
+                            ->name('connections.models.items.destroy');
                     });
             });
     });

@@ -2,6 +2,7 @@
 
 namespace Quatrebarbes\Modelbase\Http\Controllers;
 
+use Quatrebarbes\Modelbase\Support\ItemDeletionException;
 use Quatrebarbes\Modelbase\Support\ItemRepository;
 use Quatrebarbes\Modelbase\Support\ItemValidationException;
 use Illuminate\Http\Request;
@@ -88,5 +89,27 @@ class ItemController extends Controller
         }
 
         return response()->json(['data' => $updated]);
+    }
+
+    /**
+     * EX-418/EX-420 : suppression d'un item. La confirmation préalable
+     * (EX-419) est de la responsabilité du front ; côté API, une contrainte
+     * d'intégrité référentielle violée (item encore référencé par une clé
+     * étrangère entrante) est traduite en 409 par ItemRepository, jamais en
+     * suppression forcée.
+     */
+    public function destroy(string $connection, string $model, string $item)
+    {
+        try {
+            $deleted = $this->items->delete($connection, $model, $item);
+        } catch (ItemDeletionException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 409);
+        }
+
+        if (! $deleted) {
+            return response()->json(['message' => 'Item introuvable.'], 404);
+        }
+
+        return response()->json(null, 204);
     }
 }
