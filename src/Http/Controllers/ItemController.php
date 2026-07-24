@@ -3,6 +3,7 @@
 namespace Quatrebarbes\Modelbase\Http\Controllers;
 
 use Quatrebarbes\Modelbase\Support\ItemRepository;
+use Quatrebarbes\Modelbase\Support\ItemValidationException;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 
@@ -40,5 +41,52 @@ class ItemController extends Controller
         }
 
         return response()->json(['data' => $found]);
+    }
+
+    /**
+     * EX-412/EX-414/EX-415/EX-416 : schéma des colonnes du modèle (type, clé
+     * étrangère, caractère technique), indépendant de l'existence d'un item —
+     * utilisé par le formulaire front pour se construire (création, ou
+     * modèle encore vide, EX-404).
+     */
+    public function columns(string $connection, string $model)
+    {
+        return response()->json(['data' => $this->items->columns($connection, $model)]);
+    }
+
+    /**
+     * EX-412/EX-417 : création d'un item. Aucune validation propre au
+     * plug-in (EX-417) : les valeurs sont écrites telles quelles, hors
+     * colonnes techniques (EX-416) ; une violation de contrainte de colonne
+     * est traduite en 422 par ItemRepository.
+     */
+    public function store(Request $request, string $connection, string $model)
+    {
+        try {
+            $created = $this->items->create($connection, $model, $request->all());
+        } catch (ItemValidationException $exception) {
+            return response()->json(['message' => 'Validation échouée.', 'errors' => $exception->errors()], 422);
+        }
+
+        return response()->json(['data' => $created], 201);
+    }
+
+    /**
+     * EX-413/EX-417 : modification d'un item existant, même principe que
+     * store() pour la validation.
+     */
+    public function update(Request $request, string $connection, string $model, string $item)
+    {
+        try {
+            $updated = $this->items->update($connection, $model, $item, $request->all());
+        } catch (ItemValidationException $exception) {
+            return response()->json(['message' => 'Validation échouée.', 'errors' => $exception->errors()], 422);
+        }
+
+        if ($updated === null) {
+            return response()->json(['message' => 'Item introuvable.'], 404);
+        }
+
+        return response()->json(['data' => $updated]);
     }
 }

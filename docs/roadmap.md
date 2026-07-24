@@ -1,6 +1,6 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-24 (Phase 4a).
+Dernière mise à jour : 2026-07-24 (Phase 4b).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
@@ -25,7 +25,7 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 | 2     | Bases de données              | ✅ fait    |
 | 3     | Modèles                       | ✅ fait    |
 | 4a    | Items — listing & détail      | ✅ fait    |
-| 4b    | Items — création/édition      | ⬜ à faire |
+| 4b    | Items — création/édition      | ✅ fait    |
 | 4c    | Items — suppression           | ⬜ à faire |
 | 5     | Points ouverts / backlog      | ⬜ à faire |
 
@@ -120,13 +120,21 @@ Points d'attention pour la suite :
 
 ## Phase 4b — Items : création & modification (module 4, partie 2)
 
-- [ ] Endpoint `POST /connections/{c}/models/{m}/items` (EX-412)
-- [ ] Endpoint `PATCH/PUT .../items/{id}` (EX-413)
-- [ ] Formulaire front adapté par type (texte, numérique, date, checkbox, éditeur JSON) (EX-414)
-- [ ] Sélecteur d'item existant pour les colonnes FK (EX-415)
-- [ ] Colonnes techniques (PK, timestamps) en lecture seule dans le formulaire (EX-416)
-- [ ] Remontée des erreurs de validation natives de la colonne (obligatoire, unicité, format) sans dupliquer ces règles côté plug-in (EX-417)
-- Tests Feature : création, modification, erreurs de validation propagées, champs techniques non modifiables
+- [x] Endpoint `GET /connections/{c}/models/{m}/columns` (préparation EX-412/EX-414/EX-415/EX-416) — `ItemController@columns` / `ItemRepository::columns()`, route `modelbase.api.connections.models.columns.index` ; schéma des colonnes (type, clé étrangère, caractère technique) indépendant de l'existence d'un item, nécessaire pour construire le formulaire de création quand le modèle est encore vide (EX-404)
+- [x] Endpoint `POST /connections/{c}/models/{m}/items` (EX-412) — `ItemController@store`, route `...items.store`
+- [x] Endpoint `PATCH/PUT .../items/{id}` (EX-413) — `ItemController@update`, route `...items.update` (les deux verbes acceptés)
+- [x] Formulaire front adapté par type (texte, numérique, date, checkbox, éditeur JSON) (EX-414) — `frontend/components/ItemForm.vue`, construit à partir du schéma de colonnes plutôt que d'un item existant (réutilisable création/modification) ; éditeur JSON = textarea avec sa propre représentation texte, converti en valeur via `JSON.parse` à la saisie (erreur de syntaxe affichée, bloque la soumission — nécessité technique du transport, pas une règle de validation métier redéfinie)
+- [x] Sélecteur d'item existant pour les colonnes FK (EX-415) — `frontend/components/ItemPicker.vue`, réutilise le listing paginé existant du modèle référencé (module 4a) plutôt qu'un endpoint dédié ; si le modèle référencé n'est pas résolu (`foreign_key.model` nul, cf. limites module 3), pas de sélecteur possible — non géré par ce composant (cas marginal, cohérent avec les limites déjà documentées de la résolution de FK)
+- [x] Colonnes techniques (PK, timestamps) en lecture seule dans le formulaire (EX-416) — détectées côté API via les conventions du modèle Eloquent lui-même (`getKeyName()`, `usesTimestamps()`/`getCreatedAtColumn()`/`getUpdatedAtColumn()`), exposées par un champ `technical` sur chaque colonne (endpoint `/columns` et fiche détail) ; `ItemRepository::writable()` ignore silencieusement toute valeur soumise pour ces colonnes (create et update), qu'elles soient ou non désactivées côté front
+- [x] Remontée des erreurs de validation natives de la colonne (obligatoire, unicité, format) sans dupliquer ces règles côté plug-in (EX-417) — aucune validation Laravel ajoutée : les valeurs sont écrites telles quelles via le query builder (pas de passage par `Model::save()`/mass assignment, cohérent avec le reste du module qui raisonne au niveau `Schema`/`DB`) ; la `QueryException` levée par une violation de contrainte est traduite par `Support\DatabaseErrorTranslator` (NOT NULL/UNIQUE/FK/format, un pilote à la fois) en `{column, rule, message}`, puis mise en forme par `ItemRepository` en `ItemValidationException` → réponse 422 `{message, errors: {colonne: [message]}}`
+- Tests Feature : `tests/Feature/ItemMutationTest.php` (schéma des colonnes, création, modification, colonnes techniques ignorées à la création et à la modification, erreurs 422 pour colonne obligatoire manquante et valeur dupliquée sur colonne unique, encodage JSON d'une valeur tableau, 404 sur modification d'un item inconnu)
+- Tests Unit : `tests/Unit/DatabaseErrorTranslatorTest.php` (traduction mysql/pgsql/sqlite des 4 types de contrainte + pilote non reconnu), `tests/Unit/ItemRepositoryTest.php` complété (schéma des colonnes, création/modification, colonnes techniques ignorées, exceptions de validation)
+
+Points d'attention pour la suite :
+- **CSRF résolu** (levait le point de vigilance de la Phase 2) : les mutations passent par le groupe `web`, dont le middleware `PreventRequestForgery` (Laravel 13, ex-`VerifyCsrfToken`) autoriserait en théorie une requête same-origin sans jeton via l'en-tête `Sec-Fetch-Site` — mais ce raccourci ne s'applique pas ici, le hop navigateur→Nuxt→Laravel passant par le proxy Nitro (cf. Phase 3) qui casse cette garantie. `useApiClient()` relit donc explicitement le cookie `XSRF-TOKEN` (posé sur toute réponse traversant le groupe `web`, y compris un simple GET) et le renvoie en en-tête `X-XSRF-TOKEN` sur toute méthode de mutation. Vérifié en conditions réelles (pas seulement en théorie) : le cookie `XSRF-TOKEN` posé lors de la visite de `/dev-login` sur le port 8000 est bien partagé avec le port 3000 du front (portée par nom d'hôte `localhost`, pas par port, cf. RFC 6265 — même mécanisme que le cookie de session, déjà en jeu depuis la Phase 3), et une création d'item via le proxy Nitro (port 3000) avec ce jeton aboutit bien en 201 — sans jeton, 419 (`TokenMismatchException`).
+- **Écriture par query builder brut, pas par `Model::save()`** : ce choix (cohérent avec `paginate()`/`find()` déjà écrits ainsi en Phase 4a) contourne toute règle de mass assignment (`$fillable`/`$guarded`) propre au modèle hôte — indispensable pour un outil d'administration générique qui doit pouvoir écrire n'importe quelle colonne, mais deux conséquences à gérer explicitement, découvertes en testant contre mysql/pgsql réels plutôt qu'en restant sur sqlite : (1) les horodatages ne sont plus posés automatiquement par Eloquent, `ItemRepository::create()`/`update()` les renseigne donc lui-même via `Model::freshTimestampString()`, mais seulement si la colonne existe réellement dans la table (`$instance->usesTimestamps()` vaut `true` par défaut sur tout modèle Eloquent, sans lien garanti avec la présence effective de `created_at`/`updated_at` — sinon erreur SQL sur une table qui n'a pas ces colonnes) ; (2) une colonne JSON ne bénéficie plus du cast automatique d'Eloquent, `ItemRepository::writable()` encode donc explicitement en JSON toute valeur soumise sous forme de tableau pour une colonne de type `json` (sinon erreur SQL "Array to string conversion" sur pgsql, reproduite puis corrigée pendant cette phase).
+- **Traduction d'erreur par pilote, motifs vérifiés en conditions réelles** : comme `ColumnIntrospector::scalarType` en Phase 4a, `DatabaseErrorTranslator` couvre des formats d'erreur différents par moteur — vérifié par de vraies requêtes `INSERT` déclenchant chacune des 4 contraintes (NOT NULL, UNIQUE, FK, format) contre mysql 8.4 et pgsql 16 via l'environnement docker-compose, en plus des tests sqlite. Limite documentée dans la classe : extraction du nom de colonne non garantie pour un index unique nommé hors convention Laravel, ou pour un format d'erreur non couvert (sqlsrv, jamais vérifié faute d'instance joignable, cf. Phase 2) — dans ce cas `column` vaut `null` et seul le message brut du moteur est remonté (`rule: 'unknown'`).
+- Le point ouvert EX-402 (Phase 5) reste sans effet sur cette phase : le formulaire de création/modification se construit à partir du schéma complet des colonnes (`/columns`), indépendamment de la sélection de colonnes « principales » du listing.
 
 ## Phase 4c — Items : suppression (module 4, partie 3)
 

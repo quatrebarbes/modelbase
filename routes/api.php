@@ -39,11 +39,24 @@ Route::prefix(config('modelbase.route_prefix').'/api')
                 Route::prefix('/models/{model}')
                     ->middleware(EnsureModelIsNavigable::class)
                     ->group(function () {
+                        // EX-412/EX-414/EX-415/EX-416 : schéma des colonnes,
+                        // indépendant de l'existence d'un item.
+                        Route::get('/columns', [ItemController::class, 'columns'])
+                            ->name('connections.models.columns.index');
+
                         Route::get('/items', [ItemController::class, 'index'])
                             ->name('connections.models.items.index');
 
+                        // EX-412 : création d'un item.
+                        Route::post('/items', [ItemController::class, 'store'])
+                            ->name('connections.models.items.store');
+
                         Route::get('/items/{item}', [ItemController::class, 'show'])
                             ->name('connections.models.items.show');
+
+                        // EX-413 : modification d'un item existant (PUT/PATCH acceptés).
+                        Route::match(['put', 'patch'], '/items/{item}', [ItemController::class, 'update'])
+                            ->name('connections.models.items.update');
                     });
             });
     });

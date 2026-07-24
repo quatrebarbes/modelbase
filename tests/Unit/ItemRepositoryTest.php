@@ -3,8 +3,10 @@
 namespace Quatrebarbes\Modelbase\Tests\Unit;
 
 use Quatrebarbes\Modelbase\Support\ColumnIntrospector;
+use Quatrebarbes\Modelbase\Support\DatabaseErrorTranslator;
 use Quatrebarbes\Modelbase\Support\EloquentModelFinder;
 use Quatrebarbes\Modelbase\Support\ItemRepository;
+use Quatrebarbes\Modelbase\Support\ItemValidationException;
 use Quatrebarbes\Modelbase\Support\ModelResolver;
 use Quatrebarbes\Modelbase\Tests\TestCase;
 use Illuminate\Database\Schema\Blueprint;
@@ -38,7 +40,7 @@ class ItemRepositoryTest extends TestCase
         Schema::connection('primary')->create('products', function (Blueprint $table) {
             $table->id();
             $table->foreignId('category_id')->nullable()->constrained('categories');
-            $table->string('name');
+            $table->string('name')->unique();
             $table->string('description')->nullable();
         });
 
@@ -86,7 +88,7 @@ class ItemRepositoryTest extends TestCase
     {
         $finder = new EloquentModelFinder;
 
-        return new ItemRepository(new ModelResolver($finder), $finder, new ColumnIntrospector);
+        return new ItemRepository(new ModelResolver($finder), $finder, new ColumnIntrospector, new DatabaseErrorTranslator);
     }
 
     public function test_it_paginates_items_of_a_model(): void
@@ -150,5 +152,86 @@ class ItemRepositoryTest extends TestCase
 
         $this->assertFalse($values['description']['is_null']);
         $this->assertSame('', $values['description']['value']);
+    }
+
+    public function test_columns_flags_the_primary_key_as_technical_and_describes_foreign_keys(): void
+    {
+        $columns = collect($this->repository()->columns('primary', 'Product'))->keyBy('column');
+
+        $this->assertTrue($columns['id']['technical']);
+        $this->assertFalse($columns['name']['technical']);
+        $this->assertSame('foreign_key', $columns['category_id']['type']);
+        $this->assertSame('Category', $columns['category_id']['foreign_key']['model']);
+    }
+
+    public function test_create_inserts_a_new_item_with_the_submitted_values(): void
+    {
+        $item = $this->repository()->create('primary', 'Product', [
+            'category_id' => 1,
+            'name' => 'Wrench',
+            'description' => 'A tool',
+        ]);
+
+        $values = collect($item['values'])->keyBy('column');
+
+        $this->assertSame('Wrench', $values['name']['value']);
+        $this->assertSame('A tool', $values['description']['value']);
+    }
+
+    public function test_create_ignores_a_submitted_primary_key(): void
+    {
+        $item = $this->repository()->create('primary', 'Product', [
+            'id' => 999,
+            'category_id' => 1,
+            'name' => 'Wrench',
+        ]);
+
+        $this->assertNotSame(999, $item['id']);
+    }
+
+    public function test_create_throws_a_validation_exception_for_a_missing_required_column(): void
+    {
+        $this->expectException(ItemValidationException::class);
+
+        try {
+            $this->repository()->create('primary', 'Product', ['category_id' => 1]);
+        } catch (ItemValidationException $exception) {
+            $this->assertArrayHasKey('name', $exception->errors());
+
+            throw $exception;
+        }
+    }
+
+    public function test_create_throws_a_validation_exception_for_a_duplicate_unique_column(): void
+    {
+        $this->expectException(ItemValidationException::class);
+
+        try {
+            $this->repository()->create('primary', 'Product', ['category_id' => 1, 'name' => 'Hammer']);
+        } catch (ItemValidationException $exception) {
+            $this->assertArrayHasKey('name', $exception->errors());
+
+            throw $exception;
+        }
+    }
+
+    public function test_update_modifies_the_values_of_an_existing_item(): void
+    {
+        $item = $this->repository()->update('primary', 'Product', '1', ['description' => 'Updated']);
+
+        $values = collect($item['values'])->keyBy('column');
+        $this->assertSame('Updated', $values['description']['value']);
+    }
+
+    public function test_update_returns_null_for_an_unknown_item(): void
+    {
+        $this->assertNull($this->repository()->update('primary', 'Product', '404', ['description' => 'x']));
+    }
+
+    public function test_update_ignores_a_submitted_primary_key(): void
+    {
+        $item = $this->repository()->update('primary', 'Product', '1', ['id' => 555, 'description' => 'Updated']);
+
+        $this->assertSame(1, $item['id']);
     }
 }
