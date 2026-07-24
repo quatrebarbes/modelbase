@@ -16,6 +16,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Guard d'authentification
+    |--------------------------------------------------------------------------
+    |
+    | EX-101 : le plug-in s'appuie sur le guard d'auth de l'app hôte, sans rôle
+    | qui lui soit propre. `null` utilise le guard par défaut de l'application
+    | (config('auth.defaults.guard')) ; l'app hôte peut en spécifier un autre
+    | si son parcours plug-in doit être protégé par un guard dédié (ex. api).
+    |
+    */
+    'guard' => env('MODELBASE_GUARD'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Connexions exclues
     |--------------------------------------------------------------------------
     |

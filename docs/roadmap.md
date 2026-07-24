@@ -21,7 +21,7 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 | Phase | Module SFD                    | Statut    |
 |-------|-------------------------------|-----------|
 | 0     | Socle technique               | ✅ fait    |
-| 1     | Architecture générale (accès) | ⬜ à faire |
+| 1     | Architecture générale (accès) | ✅ fait    |
 | 2     | Bases de données              | ⬜ à faire |
 | 3     | Modèles                       | ⬜ à faire |
 | 4a    | Items — listing & détail      | ⬜ à faire |
@@ -50,9 +50,14 @@ Points d'attention pour la suite :
 
 Règles transversales, à poser avant les modules 2-4 car elles conditionnent l'accès à toutes les routes.
 
-- [ ] Middleware d'authentification appliqué à toutes les routes du plug-in (EX-101) — s'appuie sur le guard d'auth de l'app hôte, pas de rôle spécifique au plug-in
-- [ ] Vérification que l'accès à un niveau de navigation ne dépend que de la disponibilité du parent, jamais d'un droit utilisateur (EX-102) — test Feature dédié
-- Tests Feature : accès refusé si non authentifié, accès autorisé sans condition de rôle une fois authentifié
+- [x] Middleware d'authentification appliqué à toutes les routes du plug-in (EX-101) — s'appuie sur le guard d'auth de l'app hôte, pas de rôle spécifique au plug-in — `Quatrebarbes\Modelbase\Http\Middleware\Authenticate`, appliqué au groupe `routes/api.php` ; vérifie `Auth::guard(config('modelbase.guard'))->check()`, guard configurable (`modelbase.guard`, défaut `null` = guard par défaut de l'app hôte), sans aucune autre condition (pas de rôle propre au plug-in)
+- [x] Vérification que l'accès à un niveau de navigation ne dépend que de la disponibilité du parent, jamais d'un droit utilisateur (EX-102) — test Feature dédié — le middleware ne fait qu'une vérification d'authentification, aucun gate/policy basé sur un droit utilisateur ; testé en Phase 1 par l'égalité d'accès entre deux utilisateurs quelconques (la dépendance à la disponibilité du parent sera testée concrètement modules 2-4, une fois les routes hiérarchiques en place)
+- [x] Réponse 401 JSON sans redirection vers une page de connexion, y compris requête non-JSON (EX-103) — le middleware répond directement `response()->json(..., 401)` plutôt que de lever une `AuthenticationException`, ce qui évite toute dépendance au comportement de redirection du handler d'exceptions de l'app hôte
+- Tests Feature : accès refusé si non authentifié (401, pas de header `Location`), accès autorisé sans condition de rôle une fois authentifié — `tests/Feature/AuthenticationTest.php`, via une route de sonde protégée par le même middleware (le groupe `routes/api.php` reste vide tant qu'aucun endpoint des modules 2-4 n'existe)
+
+Points d'attention pour la suite :
+- `tests/TestCase.php` charge désormais les migrations par défaut de Testbench (`loadLaravelMigrations()`, table `users` notamment) à chaque test, nécessaire pour authentifier un utilisateur en test Feature.
+- Le PHP CLI local (WSL) ne dispose d'aucun driver PDO (ni sqlite, ni mysql, ni pgsql) — `composer test` tel que documenté dans le README ne peut donc pas encore tourner directement sur cette machine. Validé ponctuellement via un conteneur `php:8.3-cli` jetable (qui embarque `pdo_sqlite`, utilisé par défaut par Testbench). À corriger côté environnement de dev (ex. `sudo apt install php8.3-sqlite3`) plutôt que côté repo.
 
 ## Phase 2 — Bases de données (module 2)
 

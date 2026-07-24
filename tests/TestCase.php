@@ -13,4 +13,13 @@ abstract class TestCase extends BaseTestCase
             ModelbaseServiceProvider::class,
         ];
     }
+
+    /**
+     * Charge la table `users` par défaut de Testbench : nécessaire pour
+     * authentifier des utilisateurs dans les tests Feature (EX-101/EX-103).
+     */
+    protected function defineDatabaseMigrations(): void
+    {
+        $this->loadLaravelMigrations();
+    }
 }
