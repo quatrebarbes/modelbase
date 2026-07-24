@@ -48,6 +48,15 @@ class EloquentModelFinder
             ->all();
     }
 
+    /**
+     * @return class-string<Model>|null
+     */
+    public function classForTable(string $connection, string $table): ?string
+    {
+        return collect($this->forConnection($connection))
+            ->first(fn (string $class) => (new $class)->getTable() === $table);
+    }
+
     private function classFromPath(string $path, string $directory): string
     {
         $relative = Str::of($path)

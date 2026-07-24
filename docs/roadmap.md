@@ -1,6 +1,6 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-24 (Phase 3).
+Dernière mise à jour : 2026-07-24 (Phase 4a).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
@@ -24,7 +24,7 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 | 1     | Architecture générale (accès) | ✅ fait    |
 | 2     | Bases de données              | ✅ fait    |
 | 3     | Modèles                       | ✅ fait    |
-| 4a    | Items — listing & détail      | ⬜ à faire |
+| 4a    | Items — listing & détail      | ✅ fait    |
 | 4b    | Items — création/édition      | ⬜ à faire |
 | 4c    | Items — suppression           | ⬜ à faire |
 | 5     | Points ouverts / backlog      | ⬜ à faire |
@@ -98,18 +98,25 @@ Points d'attention pour la suite :
 
 ## Phase 4a — Items : listing & consultation (module 4, partie 1)
 
-- [ ] Introspection des colonnes de la table d'un modèle (nom, type, FK) → mapping vers `ColumnType` (EX-407 en prépa)
-- [ ] Endpoint `GET /connections/{c}/models/{m}/items` paginé (EX-401, EX-403)
-- [ ] Sélection des colonnes « principales » pour l'aperçu du listing (EX-402) — **point ouvert, cf. Phase 5** — afficher toutes les colonnes en attendant que le point soit tranché
-- [ ] Gestion modèle vide (EX-404)
-- [ ] Endpoint `GET /connections/{c}/models/{m}/items/{id}` détail complet (EX-405, EX-406)
-- [ ] Rendu par type de colonne côté front, y compris JSON (EX-407)
-- [ ] Résolution des FK en lien de navigation vers l'item référencé (EX-408)
-- [ ] Distinction visuelle valeur nulle vs chaîne vide (EX-409)
-- [ ] Gestion FK cassée (item référencé supprimé/inexistant) avec indicateur dédié (EX-410)
-- [ ] Navigation retour détail → listing (EX-411)
-- Tests Feature : pagination, détail, FK valide/cassée, valeur nulle, modèle vide
-- Tests Unit : mapping type colonne → rendu, résolution FK
+- [x] Introspection des colonnes de la table d'un modèle (nom, type, FK) → mapping vers `ColumnType` (EX-407 en prépa) — `Support\ColumnIntrospector`, via les méthodes natives `Schema::getColumns()`/`getForeignKeys()` (Laravel 11+, plus de dépendance à doctrine/dbal) ; `Support\ColumnType` (enum `string`/`number`/`boolean`/`date`/`json`/`foreign_key`, conforme au modèle de données du module 4)
+- [x] Endpoint `GET /connections/{c}/models/{m}/items` paginé (EX-401, EX-403) — `Http\Controllers\ItemController@index`, route `modelbase.api.connections.models.items.index`, nichée sous `/connections/{connection}/models/{model}` avec le nouveau middleware `EnsureModelIsNavigable` (EX-102, même principe qu'`EnsureConnectionIsNavigable` un niveau plus haut : 404 si le modèle n'est pas déclaré pour la connexion, indépendamment de tout droit utilisateur) ; pagination Eloquent standard (`page`/`per_page`), résolution du modèle réutilisant `Support\ModelResolver` (nouveau, construit sur `EloquentModelFinder::forConnection()` + filtre par `class_basename`)
+- [x] Sélection des colonnes « principales » pour l'aperçu du listing (EX-402) — **point ouvert, cf. Phase 5** — toutes les colonnes sont renvoyées brutes (non décorées par type) en attendant que le point soit tranché
+- [x] Gestion modèle vide (EX-404) — `data: []`, 200, pas d'erreur
+- [x] Endpoint `GET /connections/{c}/models/{m}/items/{id}` détail complet (EX-405, EX-406) — `ItemController@show`, route `...items.show` ; `Support\ItemRepository::find()` décore chaque colonne (type, valeur, `is_null`) via `ColumnIntrospector`
+- [x] Rendu par type de colonne côté front, y compris JSON (EX-407) — `frontend/components/ItemDetail.vue` : `<pre>` pour JSON, Oui/Non pour booléen, texte pour le reste
+- [x] Résolution des FK en lien de navigation vers l'item référencé (EX-408) — pour une colonne FK, `ItemRepository` cherche le modèle Eloquent déclaré pour la table référencée (`EloquentModelFinder::classForTable()`, nouveau) **au sein de la même connexion** (les FK inter-connexions ne sont pas gérées, cf. limites module 3) et vérifie l'existence de la ligne référencée ; front : `NuxtLink` si `foreign_key.navigable`
+- [x] Distinction visuelle valeur nulle vs chaîne vide (EX-409) — API : champ `is_null` distinct de `value` (`null` réel vs `''`) ; front : badge « NULL » vs « (chaîne vide) »
+- [x] Gestion FK cassée (item référencé supprimé/inexistant) avec indicateur dédié (EX-410) — `foreign_key.navigable` à `false` si le modèle référencé n'est pas déclaré ou si la ligne référencée n'existe plus ; front : indicateur textuel sans lien
+- [x] Navigation retour détail → listing (EX-411) — lien statique en tête de la page détail front
+- Tests Feature : `tests/Feature/ItemListingTest.php` (pagination, détail typé, FK valide/cassée, valeur nulle vs chaîne vide, modèle sans item, modèle/item inconnu)
+- Tests Unit : `tests/Unit/ColumnIntrospectorTest.php` (mapping type colonne y compris FK), `tests/Unit/ItemRepositoryTest.php` (pagination, détail décoré, résolution FK, modèle vide)
+
+Points d'attention pour la suite :
+- **Noms de type de colonne non uniformes entre drivers** : `Schema::getColumns()` renvoie un `type_name` propre à chaque SGBD (ex. entier 64 bits : `bigint` en mysql/sqlite, `int8` en pgsql ; horodatage : `timestamp` en mysql/pgsql, `datetime` en sqlite) — `ColumnIntrospector::scalarType()` maintient une liste de correspondance par famille plutôt qu'un mapping 1:1, vérifiée manuellement contre mysql (`products`) et pgsql (`articles`) réels en plus des tests sqlite. À enrichir si un driver supplémentaire (sqlsrv) est un jour testé en conditions réelles (mapping `bit`/`money`/`datetime2` ajouté par anticipation, non vérifié faute d'instance sqlsrv joignable, cf. Phase 2).
+- **Colonne JSON indétectable sur sqlite par défaut** : `$table->json(...)` compile en type `text` sur sqlite sauf si la connexion active `use_native_json` (cf. `SQLiteGrammar::typeJson`) — sans ce flag, une colonne JSON sqlite est indiscernable d'une colonne string à l'introspection. N'affecte pas mysql/pgsql (type `json` natif, vérifié manuellement sur `articles.metadata` en pgsql) ; les tests sqlite (`ColumnIntrospectorTest`, `ItemListingTest`) activent `use_native_json` sur la connexion de test pour rester représentatifs.
+- **Détection de clé étrangère limitée aux FK simples (une colonne)** : `ColumnIntrospector::foreignKeyFor()` ignore une clé étrangère composite (plusieurs colonnes) — hors périmètre du modèle de données du module 4 (une `ItemValue` référence au plus un `Item`).
+- **Résolution du modèle référencé par une FK contrainte à la connexion courante** : `ItemRepository::resolveForeignKey()` ne cherche le modèle Eloquent de la table référencée que parmi ceux déclarés sur la même connexion que l'item consulté ; une FK vers une autre connexion ne serait pas résolue en modèle navigable (limitation cohérente avec celle du module 3, qui raisonne modèle par modèle au sein d'une connexion).
+- Le point ouvert EX-402 reste entier : le listing affiche pour l'instant toutes les colonnes en valeur brute (non typée), sans décoration FK/JSON/etc. — seule la fiche détail applique le rendu par type.
 
 ## Phase 4b — Items : création & modification (module 4, partie 2)
 

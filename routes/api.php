@@ -1,9 +1,11 @@
 <?php
 
 use Quatrebarbes\Modelbase\Http\Controllers\ConnectionController;
+use Quatrebarbes\Modelbase\Http\Controllers\ItemController;
 use Quatrebarbes\Modelbase\Http\Controllers\ModelController;
 use Quatrebarbes\Modelbase\Http\Middleware\Authenticate;
 use Quatrebarbes\Modelbase\Http\Middleware\EnsureConnectionIsNavigable;
+use Quatrebarbes\Modelbase\Http\Middleware\EnsureModelIsNavigable;
 use Illuminate\Support\Facades\Route;
 
 // Routes API du plug-in, sous le préfixe configurable (modelbase.route_prefix)
@@ -30,5 +32,18 @@ Route::prefix(config('modelbase.route_prefix').'/api')
             ->group(function () {
                 Route::get('/models', [ModelController::class, 'index'])
                     ->name('connections.models.index');
+
+                // EX-102 : même principe qu'EnsureConnectionIsNavigable un
+                // niveau plus haut — l'accès aux items dépend uniquement de
+                // la déclaration du modèle pour cette connexion (module 3).
+                Route::prefix('/models/{model}')
+                    ->middleware(EnsureModelIsNavigable::class)
+                    ->group(function () {
+                        Route::get('/items', [ItemController::class, 'index'])
+                            ->name('connections.models.items.index');
+
+                        Route::get('/items/{item}', [ItemController::class, 'show'])
+                            ->name('connections.models.items.show');
+                    });
             });
     });
