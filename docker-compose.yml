@@ -20,6 +20,27 @@ services:
       pgsql:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    working_dir: /var/www/frontend
+    volumes:
+      - .:/var/www
+      # Node modules du conteneur isolés du bind-mount du repo : évite
+      # d'écraser/réutiliser un node_modules installé côté hôte (autre OS/arch).
+      - frontend_node_modules:/var/www/frontend/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      # Cible du proxy Nitro (cf. frontend/nuxt.config.ts) : "app", le nom du
+      # service Laravel dans le réseau docker-compose, plutôt que le
+      # "localhost:8000" par défaut (valable seulement hors conteneur).
+      MODELBASE_API_ORIGIN: http://app:8000
+    entrypoint: ["/bin/sh", "/var/www/docker/frontend-entrypoint.sh"]
+    depends_on:
+      - app
+
   mysql:
     image: mysql:8.4
     environment:
@@ -56,3 +77,4 @@ services:
 volumes:
   mysql_data:
   pgsql_data:
+  frontend_node_modules:

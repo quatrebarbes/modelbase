@@ -1,6 +1,6 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-24 (Phase 2).
+Dernière mise à jour : 2026-07-24 (Phase 3).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
@@ -23,7 +23,7 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 | 0     | Socle technique               | ✅ fait    |
 | 1     | Architecture générale (accès) | ✅ fait    |
 | 2     | Bases de données              | ✅ fait    |
-| 3     | Modèles                       | ⬜ à faire |
+| 3     | Modèles                       | ✅ fait    |
 | 4a    | Items — listing & détail      | ⬜ à faire |
 | 4b    | Items — création/édition      | ⬜ à faire |
 | 4c    | Items — suppression           | ⬜ à faire |
@@ -77,14 +77,24 @@ Points d'attention pour la suite :
 
 ## Phase 3 — Modèles (module 3)
 
-- [ ] Endpoint `GET /connections/{connection}/models` listant les modèles Eloquent déclarés dans l'application hôte qui utilisent cette connexion (EX-301)
-- [ ] Mécanisme de découverte des modèles Eloquent déclarés (scan des classes de l'app hôte, ex. via composer classmap ou répertoire `app/Models`, filtrage sur la connexion utilisée) — Unit test dédié
-- [ ] Pour chaque modèle : nom, nombre d'items, nombre de colonnes (EX-302)
-- [ ] Front Nuxt : navigation modèle → items (EX-303)
-- [ ] Filtre par nom côté listing (EX-304), côté front et/ou query param API
-- [ ] Gestion du cas « aucun modèle éligible » (message, pas d'erreur) — limite documentée
-- [ ] Gestion du cas « plusieurs modèles pointant vers la même table » (entrées distinctes) — limite documentée
-- Tests Feature : listing filtré par connexion, comptage colonnes/items, filtre par nom, connexion sans modèle
+- [x] Endpoint `GET /connections/{connection}/models` listant les modèles Eloquent déclarés dans l'application hôte qui utilisent cette connexion (EX-301) — `Http\Controllers\ModelController@index`, route nommée `modelbase.api.connections.models.index`, nichée sous `/connections/{connection}` avec le middleware `EnsureConnectionIsNavigable` (EX-206) réellement appliqué pour la première fois (jusqu'ici seulement exercé via une route sonde en Phase 2)
+- [x] Mécanisme de découverte des modèles Eloquent déclarés (scan des classes de l'app hôte, ex. via composer classmap ou répertoire `app/Models`, filtrage sur la connexion utilisée) — Unit test dédié — réutilise tel quel `Support\EloquentModelFinder` construit en avance de phase (Phase 2) ; aucune extension nécessaire
+- [x] Pour chaque modèle : nom, nombre d'items, nombre de colonnes (EX-302) — `Support\ModelRepository` : nom via `class_basename`, `item_count` via `Connection::table($table)->count()`, `column_count` via `Connection::getSchemaBuilder()->getColumnListing($table)`
+- [x] Front Nuxt : navigation modèle → items (EX-303) — `frontend/pages/connections/[connection]/index.vue` + `frontend/components/ModelList.vue` ; lien `NuxtLink` vers `/connections/{connection}/models/{model}` (page items à créer en Phase 4a)
+- [x] Filtre par nom côté listing (EX-304), côté front et/ou query param API — implémenté côté API (query param `search`, insensible à la casse, sous-chaîne) dans `ModelRepository::forConnection()` ; le front relance la requête via `useAsyncData` avec `watch` sur un champ de recherche
+- [x] Gestion du cas « aucun modèle éligible » (message, pas d'erreur) — limite documentée — API : tableau `data` vide, 200 ; front : message dédié dans `ModelList.vue`
+- [x] Gestion du cas « plusieurs modèles pointant vers la même table » (entrées distinctes) — limite documentée — `ModelRepository` construit une entrée par classe Eloquent, jamais par table ; testé explicitement
+- Tests Feature : `tests/Feature/ModelListingTest.php` (listing filtré par connexion, comptage colonnes/items, filtre par nom, connexion sans modèle, doublon de table, connexion indisponible/inconnue via la vraie route)
+- Test Unit : `tests/Unit/ModelRepositoryTest.php` (description modèle → table/item_count/column_count, filtre par nom insensible à la casse, recherche vide non filtrante)
+
+Points d'attention pour la suite :
+- **Piège sqlite `:memory:` + `EnsureConnectionIsNavigable`** : ce middleware purge la connexion (`DB::purge`, cf. `ConnectionAvailability`, EX-204/EX-208) avant de laisser passer la requête. Sur une connexion sqlite `:memory:`, une purge reconnecte à une base en mémoire *vierge* — toute table créée en amont dans un test Feature disparaît donc dès que la requête passe par une route protégée par ce middleware. `ModelListingTest` utilise un fichier sqlite temporaire sur disque (`tempnam()`) plutôt que `:memory:` pour la connexion `primary` afin d'éviter ce piège ; à reproduire pour tout futur test Feature du module 4 qui interroge réellement les données d'un modèle (les tests de la Phase 2 n'y étaient pas exposés, `model_count` ne faisant qu'un décompte de classes, sans requête SQL).
+- **Collision de classes PHP entre fichiers de test** : les tests qui déclarent dynamiquement des classes Eloquent factices dans `app/Models` (via `File::put` + `require`/`require_once`) doivent utiliser des noms de classe uniques *à l'échelle de toute la suite* (pas seulement du fichier de test), PHPUnit exécutant tous les tests dans le même process sans isolation. `require_once` protège en plus contre la redéclaration au sein d'un même fichier de test (un `setUp()` par méthode de test, donc plusieurs écritures/inclusions du même chemin de fichier).
+- Le point ouvert EX-402 (colonnes « principales » du listing d'items, cf. Phase 5) reste entier pour la Phase 4a : ce module 3 n'affiche que des compteurs (items/colonnes), pas les colonnes elles-mêmes.
+- **Bug corrigé, transverse à toutes les pages front (introduit en Phase 2, révélé en testant manuellement la Phase 3)** : `useApiClient()` (`frontend/composables/useApiClient.ts`) ne transmettait pas le cookie de session lors du rendu SSR — Nuxt exécute l'appel `$fetch` côté serveur Node lors du SSR, sans reprendre automatiquement les en-têtes de la requête entrante. Résultat : la page se rendait toujours comme si l'utilisateur n'était pas connecté (401 côté SSR), quel que soit l'état réel de sa session. Corrigé en passant `useRequestHeaders(['cookie'])` dans les options du `$fetch` uniquement côté serveur (`import.meta.server`).
+- **Test manuel de bout en bout** : l'app hôte de démo (`demo/`) n'a aucun scaffolding d'authentification (pas de Breeze/Fortify/Jetstream) ni de route `/login` — une route `GET /dev-login` dev-only a été ajoutée à `demo/routes/web.php` (active seulement si `app()->environment('local')`) pour authentifier l'utilisateur de démo seedé, à visiter une fois dans le navigateur avant d'utiliser le front.
+- **Le front Nuxt tourne dans son propre conteneur** (`docker/frontend.Dockerfile`, service `frontend` du `docker-compose.yml`, port `3000`), au même titre que l'app de démo — plus de process Node lancé à la main sur l'hôte/WSL. Il proxifie `/modelbase/api/**` vers le conteneur `app` (route Nitro `routeRules` dans `frontend/nuxt.config.ts`, cible `MODELBASE_API_ORIGIN=http://app:8000` fournie par docker-compose, `http://localhost:8000` par défaut si lancé hors Docker) pour rester same-origin côté navigateur et éviter toute configuration CORS/cookies cross-site. `node_modules` est isolé dans un volume nommé (`frontend_node_modules`) plutôt que bind-monté depuis l'hôte, pour éviter tout conflit de plateforme avec des binaires natifs (esbuild, etc.) déjà installés côté hôte.
+- **Prérequis Node pour le CLI Nuxt** : le Node système par défaut de l'environnement WSL utilisé pour le développement (`v18.19.1`) est trop ancien pour le CLI Nuxt (`SyntaxError` sur `node:util`'s `styleText`, requis en interne par `@clack/core`) — d'où le choix de `node:22-slim` pour l'image du conteneur `frontend`. Pertinent uniquement si le front est lancé hors Docker (cf. README) ; le conteneur n'y est pas exposé.
 
 ## Phase 4a — Items : listing & consultation (module 4, partie 1)
 

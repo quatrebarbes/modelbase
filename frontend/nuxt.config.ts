@@ -12,4 +12,16 @@ export default defineNuxtConfig({
       apiBase: '/modelbase/api',
     },
   },
+
+  // Proxifie les appels vers l'API Laravel de l'app hôte pour rester
+  // same-origin côté navigateur (le serveur Nuxt tourne sur un port distinct
+  // en dev) : évite toute configuration CORS et garde la session de l'app
+  // hôte utilisable telle quelle (EX-101, guard session-based par défaut).
+  // Cible surchargeable via MODELBASE_API_ORIGIN (ex. si l'app hôte n'écoute
+  // pas sur localhost:8000).
+  routeRules: {
+    '/modelbase/api/**': {
+      proxy: `${process.env.MODELBASE_API_ORIGIN ?? 'http://localhost:8000'}/modelbase/api/**`,
+    },
+  },
 })

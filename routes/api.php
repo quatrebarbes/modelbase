@@ -1,7 +1,9 @@
 <?php
 
 use Quatrebarbes\Modelbase\Http\Controllers\ConnectionController;
+use Quatrebarbes\Modelbase\Http\Controllers\ModelController;
 use Quatrebarbes\Modelbase\Http\Middleware\Authenticate;
+use Quatrebarbes\Modelbase\Http\Middleware\EnsureConnectionIsNavigable;
 use Illuminate\Support\Facades\Route;
 
 // Routes API du plug-in, sous le préfixe configurable (modelbase.route_prefix)
@@ -18,4 +20,15 @@ Route::prefix(config('modelbase.route_prefix').'/api')
     ->group(function () {
         Route::get('/connections', [ConnectionController::class, 'index'])
             ->name('connections.index');
+
+        // EX-206 : la navigation vers une connexion (et tout ce qu'elle
+        // contient — modules 3-4) est bloquée si celle-ci n'est pas
+        // disponible (cf. EnsureConnectionIsNavigable, déjà testé en
+        // Phase 2 via une route sonde avant même l'existence de ces routes).
+        Route::prefix('/connections/{connection}')
+            ->middleware(EnsureConnectionIsNavigable::class)
+            ->group(function () {
+                Route::get('/models', [ModelController::class, 'index'])
+                    ->name('connections.models.index');
+            });
     });
