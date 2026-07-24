@@ -1,8 +1,8 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-23.
+Dernière mise à jour : 2026-07-24.
 
-Projet actuellement vierge (aucun code). Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
+Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
 1. Architecture générale (EX-101, EX-102)
 2. Bases de données (EX-201 à EX-208)
@@ -20,7 +20,7 @@ Projet actuellement vierge (aucun code). Cette roadmap découle des 4 SFD prése
 
 | Phase | Module SFD                    | Statut    |
 |-------|-------------------------------|-----------|
-| 0     | Socle technique               | ⬜ à faire |
+| 0     | Socle technique               | ✅ fait    |
 | 1     | Architecture générale (accès) | ⬜ à faire |
 | 2     | Bases de données              | ⬜ à faire |
 | 3     | Modèles                       | ⬜ à faire |
@@ -35,11 +35,16 @@ Projet actuellement vierge (aucun code). Cette roadmap découle des 4 SFD prése
 
 Prérequis à tout le reste, ne couvre pas d'exigence directement.
 
-- [ ] Squelette package Laravel (composer.json, ServiceProvider, autoload PSR-4)
-- [ ] Fichier de config publiable (ex. connexions exclues, tables techniques à filtrer)
-- [ ] Squelette Nuxt 3 (structure pages/composants, client API)
-- [ ] docker-compose (dev/test uniquement, pas de prod) : app hôte Laravel de démo + mysql + pgsql, seed de données de démo
-- [ ] Pipeline de test (Pest/PHPUnit) branché en CI locale
+- [x] Squelette package Laravel (composer.json, ServiceProvider, autoload PSR-4) — package `quatrebarbes/modelbase`, namespace `Quatrebarbes\Modelbase\`, provider auto-découvert (`extra.laravel.providers`)
+- [x] Fichier de config publiable (ex. connexions exclues) — `config/modelbase.php` (`route_prefix`, `excluded_connections`), publiable via `vendor:publish --tag=modelbase-config` — la clé `technical_tables` initialement prévue a été retirée : depuis le passage à un listing par modèles Eloquent déclarés (module 3), l'exclusion des tables techniques est un effet de bord naturel de la découverte (cf. Phase 3)
+- [x] Squelette Nuxt 3 (structure pages/composants, client API) — `frontend/` (Nuxt 3.21, layout classique `pages/`/`components/`/`composables/`), `useApiClient()` pointant sur `runtimeConfig.public.apiBase` (`/modelbase/api` par défaut, aligné sur EX-104/105)
+- [x] docker-compose (dev/test uniquement, pas de prod) : app hôte Laravel de démo + mysql + pgsql, seed de données de démo — `demo/` (host Laravel 13 requérant le plug-in via repository `path`), `docker-compose.yml` (services `app`/`mysql`/`pgsql`, ports hôte 8000/33061/54321 pour éviter les conflits avec d'autres projets), seed : `categories`→`products` sur mysql, `authors`→`articles` (avec JSON et FK) sur pgsql
+- [x] Pipeline de test (Pest/PHPUnit) branché en CI locale — `orchestra/testbench`, `tests/TestCase.php`, `vendor/bin/phpunit` fonctionnel (0 test pour l'instant : le test de vérification `PingTest`/route `/ping` a été retiré une fois le câblage prouvé, cf. ci-dessous)
+
+Points d'attention pour la suite :
+- `migrate:fresh` ne réinitialise que la connexion par défaut (mysql) ; l'entrypoint docker (`docker/app-entrypoint.sh`) fait un `db:wipe --database=pgsql` explicite avant, sinon les tables créées via `Schema::connection('pgsql')` (authors/articles) entrent en conflit au redémarrage suivant.
+- Les fichiers édités depuis Windows perdent leur bit exécutable (constaté sur `app-entrypoint.sh`) — le compose invoque donc le script via `sh` plutôt que de compter sur `+x`.
+- `routes/api.php` ne contient qu'un groupe vide (prêt pour la Phase 1) : la route `/ping` ayant servi à valider le câblage (provider → routes → préfixe configurable → app de démo) a été retirée, n'étant couverte par aucune exigence SFD et incompatible avec le futur middleware d'auth global (EX-101/EX-103) sans cas particulier.
 
 ## Phase 1 — Architecture générale (module 1)
 
