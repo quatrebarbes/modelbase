@@ -1,0 +1,65 @@
+{
+  "common": {
+    "breadcrumbLabel": "Breadcrumb",
+    "loading": "Loading",
+    "databases": "Databases",
+    "languageSelector": "Interface language"
+  },
+  "locale": {
+    "fr": "Français",
+    "en": "English"
+  },
+  "connections": {
+    "columnName": "Name",
+    "columnDriver": "Driver",
+    "columnStatus": "Status",
+    "columnModels": "Models",
+    "statusAvailable": "available",
+    "statusUnavailable": "unavailable"
+  },
+  "models": {
+    "title": "Models — {connection}",
+    "empty": "No model available for this connection.",
+    "columnName": "Name",
+    "columnTable": "Table",
+    "columnItems": "Items",
+    "columnColumns": "Columns",
+    "searchPlaceholder": "Filter by name or table"
+  },
+  "items": {
+    "title": "Items — {model}",
+    "empty": "No item available for this model.",
+    "new": "+ New item",
+    "page": "Page {current} / {last} ({total} item(s))"
+  },
+  "itemDetail": {
+    "title": "{model} — item {item}",
+    "breadcrumbItem": "Item {item}",
+    "null": "NULL",
+    "emptyString": "(empty string)",
+    "yes": "Yes",
+    "no": "No",
+    "brokenForeignKey": "referenced item not found",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirmDelete": "Permanently delete this item?",
+    "saved": "Changes saved.",
+    "deleted": "Item deleted.",
+    "updateFailed": "The update failed.",
+    "deleteFailed": "The deletion failed."
+  },
+  "itemForm": {
+    "technicalReadOnly": "(technical, read-only)",
+    "notEditable": "(not editable)",
+    "invalidJson": "Invalid JSON.",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "itemCreate": {
+    "title": "{model} — new item",
+    "breadcrumbNew": "New item",
+    "create": "Create",
+    "created": "Item created.",
+    "createFailed": "The creation failed."
+  }
+}

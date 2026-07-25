@@ -29,9 +29,11 @@ const props = withDefaults(defineProps<{
   initialValues: () => ({}),
   errors: () => ({}),
   disabled: false,
-  submitLabel: 'Enregistrer',
   cancellable: false,
 })
+
+const { t } = useI18n()
+const resolvedSubmitLabel = computed(() => props.submitLabel ?? t('itemForm.save'))
 
 const emit = defineEmits<{
   submit: [values: Record<string, unknown>]
@@ -76,9 +78,9 @@ function handleSubmit(): void {
       <label :for="`field-${column.column}`" class="field-grid__label">
         {{ column.column }}
         <!-- EX-416 : colonnes techniques affichées mais non modifiables -->
-        <span v-if="column.technical" class="item-form__technical">(technique, lecture seule)</span>
+        <span v-if="column.technical" class="item-form__technical">{{ $t('itemForm.technicalReadOnly') }}</span>
         <!-- EX-421 : colonne non fillable côté modèle hôte, non modifiable au même titre -->
-        <span v-else-if="!column.fillable" class="item-form__technical">(non modifiable)</span>
+        <span v-else-if="!column.fillable" class="item-form__technical">{{ $t('itemForm.notEditable') }}</span>
       </label>
 
       <div class="item-form__control">
@@ -138,7 +140,7 @@ function handleSubmit(): void {
           @input="values[column.column] = ($event.target as HTMLInputElement).value"
         >
 
-        <p v-if="column.type === 'json' && jsonErrors[column.column]" class="item-form__error">JSON invalide.</p>
+        <p v-if="column.type === 'json' && jsonErrors[column.column]" class="item-form__error">{{ $t('itemForm.invalidJson') }}</p>
         <!-- EX-417 : erreurs de validation natives de la colonne, remontées telles quelles -->
         <p v-for="message in (errors[column.column] ?? [])" :key="message" class="item-form__error">{{ message }}</p>
       </div>
@@ -148,7 +150,7 @@ function handleSubmit(): void {
 
     <div class="item-form__actions">
       <button type="submit" class="btn btn--primary" :disabled="disabled">
-        {{ submitLabel }}
+        {{ resolvedSubmitLabel }}
       </button>
       <button
         v-if="cancellable"
@@ -157,7 +159,7 @@ function handleSubmit(): void {
         :disabled="disabled"
         @click="emit('cancel')"
       >
-        Annuler
+        {{ $t('itemForm.cancel') }}
       </button>
     </div>
   </form>

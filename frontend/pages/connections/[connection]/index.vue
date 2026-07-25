@@ -4,6 +4,7 @@ const route = useRoute()
 const connection = route.params.connection as string
 
 const api = useApiClient()
+const { t } = useI18n()
 const search = ref('')
 
 // Attend une pause de frappe avant d'interroger l'API, pour ne pas relancer
@@ -25,18 +26,18 @@ const { data, pending } = await useAsyncData(
 
 const models = computed(() => data.value?.data ?? [])
 
-useHead({ title: `Modèles — ${connection}` })
+useHead({ title: t('models.title', { connection }) })
 </script>
 
 <template>
   <main>
-    <Breadcrumb :items="[{ label: 'Bases de données', to: '/' }, { label: connection }]" />
-    <h1>Modèles — {{ connection }}</h1>
+    <Breadcrumb :items="[{ label: $t('common.databases'), to: '/' }, { label: connection }]" />
+    <h1>{{ $t('models.title', { connection }) }}</h1>
     <div class="toolbar">
       <input
         v-model="search"
         type="search"
-        placeholder="Filtrer par nom ou table"
+        :placeholder="$t('models.searchPlaceholder')"
         class="toolbar__search"
       />
       <Spinner v-if="pending" />

@@ -16,7 +16,7 @@ function goToItem(item: ItemRow) {
 
 <template>
   <!-- EX-404 : message dédié, pas d'erreur, si le modèle ne contient aucun item -->
-  <p v-if="items.length === 0">Aucun item disponible pour ce modèle.</p>
+  <p v-if="items.length === 0">{{ $t('items.empty') }}</p>
   <table v-else class="data-table">
     <thead>
       <tr>

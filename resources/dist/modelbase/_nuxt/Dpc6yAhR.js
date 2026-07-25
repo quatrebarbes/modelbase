@@ -1,1 +1,0 @@
-import{a9 as n,aa as s,ab as r,a5 as u,ac as o}from"./CBF41-XB.js";function c(a){const t=a||s();return t?.ssrContext?.head||t?.runWithContext(()=>{if(r())return u(o)})}function x(a,t={}){const e=c(t.nuxt);if(e)return n(a,{head:e,...t})}export{x as u};

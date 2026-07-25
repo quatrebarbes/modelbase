@@ -21,10 +21,10 @@ function goToConnection(connection: Connection) {
   <table class="data-table">
     <thead>
       <tr>
-        <th>Nom</th>
-        <th>Driver</th>
-        <th>Statut</th>
-        <th>Modèles</th>
+        <th>{{ $t('connections.columnName') }}</th>
+        <th>{{ $t('connections.columnDriver') }}</th>
+        <th>{{ $t('connections.columnStatus') }}</th>
+        <th>{{ $t('connections.columnModels') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -39,7 +39,7 @@ function goToConnection(connection: Connection) {
       >
         <td>{{ connection.name }}</td>
         <td>{{ connection.driver }}</td>
-        <td>{{ connection.status === 'available' ? 'disponible' : 'indisponible' }}</td>
+        <td>{{ connection.status === 'available' ? $t('connections.statusAvailable') : $t('connections.statusUnavailable') }}</td>
         <td>{{ connection.status === 'available' ? connection.model_count : '—' }}</td>
       </tr>
     </tbody>

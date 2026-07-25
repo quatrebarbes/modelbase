@@ -9,6 +9,7 @@ const item = route.params.item as string
 
 const api = useApiClient()
 const toast = useToast()
+const { t } = useI18n()
 const { data, refresh } = await useAsyncData(
   `item-${connection}-${model}-${item}`,
   () => api(`/connections/${connection}/models/${model}/items/${item}`)
@@ -30,7 +31,7 @@ const submitting = ref(false)
 const deleting = ref(false)
 const deleteError = ref<string | null>(null)
 
-useHead({ title: `${model} — item ${item}` })
+useHead({ title: t('itemDetail.title', { model, item }) })
 
 async function handleSubmit(submitted: Record<string, unknown>) {
   submitting.value = true
@@ -44,9 +45,9 @@ async function handleSubmit(submitted: Record<string, unknown>) {
 
     await refresh()
     editing.value = false
-    toast.show('Modifications enregistrées.')
+    toast.show(t('itemDetail.saved'))
   } catch (error: any) {
-    errors.value = error?.data?.errors ?? { _general: ['La modification a échoué.'] }
+    errors.value = error?.data?.errors ?? { _general: [t('itemDetail.updateFailed')] }
   } finally {
     submitting.value = false
   }
@@ -56,7 +57,7 @@ async function handleSubmit(submitted: Record<string, unknown>) {
 // et affichage de l'éventuelle erreur d'intégrité référentielle renvoyée par
 // l'API (409), sans jamais forcer la suppression.
 async function handleDelete() {
-  if (!window.confirm('Supprimer définitivement cet item ?')) return
+  if (!window.confirm(t('itemDetail.confirmDelete'))) return
 
   deleting.value = true
   deleteError.value = null
@@ -64,9 +65,9 @@ async function handleDelete() {
   try {
     await api(`/connections/${connection}/models/${model}/items/${item}`, { method: 'DELETE' })
     await navigateTo(`/connections/${connection}/models/${model}`)
-    toast.show('Item supprimé.')
+    toast.show(t('itemDetail.deleted'))
   } catch (error: any) {
-    deleteError.value = error?.data?.message ?? 'La suppression a échoué.'
+    deleteError.value = error?.data?.message ?? t('itemDetail.deleteFailed')
     deleting.value = false
   }
 }
@@ -76,17 +77,17 @@ async function handleDelete() {
   <main>
     <!-- EX-411 : retour au listing des items du modèle, assuré par le fil d'Ariane -->
     <Breadcrumb :items="[
-      { label: 'Bases de données', to: '/' },
+      { label: $t('common.databases'), to: '/' },
       { label: connection, to: `/connections/${connection}` },
       { label: model, to: `/connections/${connection}/models/${model}` },
-      { label: `Item ${item}` },
+      { label: $t('itemDetail.breadcrumbItem', { item }) },
     ]" />
-    <h1>{{ model }} — item {{ item }}</h1>
+    <h1>{{ $t('itemDetail.title', { model, item }) }}</h1>
     <div v-if="!editing" class="toolbar">
       <div class="toolbar__actions">
-        <button type="button" class="btn btn--primary" @click="editing = true">Modifier</button>
+        <button type="button" class="btn btn--primary" @click="editing = true">{{ $t('itemDetail.edit') }}</button>
         <!-- EX-418/EX-419 : confirmation obligatoire avant suppression -->
-        <button type="button" class="btn btn--danger" :disabled="deleting" @click="handleDelete">Supprimer</button>
+        <button type="button" class="btn btn--danger" :disabled="deleting" @click="handleDelete">{{ $t('itemDetail.delete') }}</button>
       </div>
     </div>
 
@@ -101,7 +102,6 @@ async function handleDelete() {
       :errors="errors"
       :disabled="submitting"
       cancellable
-      submit-label="Enregistrer"
       @submit="handleSubmit"
       @cancel="editing = false"
     />

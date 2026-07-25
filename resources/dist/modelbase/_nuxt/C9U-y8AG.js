@@ -1,1 +1,0 @@
-import{_ as e,o as c,c as n}from"./CBF41-XB.js";const s={},t={class:"spinner",role:"status","aria-label":"Chargement"};function _(o,a){return c(),n("span",t)}const p=e(s,[["render",_],["__scopeId","data-v-b999c7d7"]]);export{p as _};

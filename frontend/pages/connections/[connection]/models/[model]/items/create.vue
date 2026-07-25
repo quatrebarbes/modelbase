@@ -6,6 +6,7 @@ const model = route.params.model as string
 
 const api = useApiClient()
 const toast = useToast()
+const { t } = useI18n()
 const { data: columnsData } = await useAsyncData(
   `create-columns-${connection}-${model}`,
   () => api(`/connections/${connection}/models/${model}/columns`)
@@ -15,7 +16,7 @@ const columns = computed(() => columnsData.value?.data ?? [])
 const errors = ref<Record<string, string[]>>({})
 const submitting = ref(false)
 
-useHead({ title: `${model} — nouvel item` })
+useHead({ title: t('itemCreate.title', { model }) })
 
 async function handleSubmit(values: Record<string, unknown>) {
   submitting.value = true
@@ -28,9 +29,9 @@ async function handleSubmit(values: Record<string, unknown>) {
     })
 
     await navigateTo(`/connections/${connection}/models/${model}/items/${response.data.id}`)
-    toast.show('Item créé.')
+    toast.show(t('itemCreate.created'))
   } catch (error: any) {
-    errors.value = error?.data?.errors ?? { _general: ['La création a échoué.'] }
+    errors.value = error?.data?.errors ?? { _general: [t('itemCreate.createFailed')] }
   } finally {
     submitting.value = false
   }
@@ -40,19 +41,19 @@ async function handleSubmit(values: Record<string, unknown>) {
 <template>
   <main>
     <Breadcrumb :items="[
-      { label: 'Bases de données', to: '/' },
+      { label: $t('common.databases'), to: '/' },
       { label: connection, to: `/connections/${connection}` },
       { label: model, to: `/connections/${connection}/models/${model}` },
-      { label: 'Nouvel item' },
+      { label: $t('itemCreate.breadcrumbNew') },
     ]" />
-    <h1>{{ model }} — nouvel item</h1>
+    <h1>{{ $t('itemCreate.title', { model }) }}</h1>
 
     <ItemForm
       :columns="columns"
       :connection="connection"
       :errors="errors"
       :disabled="submitting"
-      submit-label="Créer"
+      :submit-label="$t('itemCreate.create')"
       @submit="handleSubmit"
     />
   </main>

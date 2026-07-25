@@ -1,5 +1,5 @@
 <template>
-  <span class="spinner" role="status" aria-label="Chargement" />
+  <span class="spinner" role="status" :aria-label="$t('common.loading')" />
 </template>
 
 <style scoped>

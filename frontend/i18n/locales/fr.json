@@ -1,0 +1,65 @@
+{
+  "common": {
+    "breadcrumbLabel": "Fil d'Ariane",
+    "loading": "Chargement",
+    "databases": "Bases de données",
+    "languageSelector": "Langue de l'interface"
+  },
+  "locale": {
+    "fr": "Français",
+    "en": "English"
+  },
+  "connections": {
+    "columnName": "Nom",
+    "columnDriver": "Driver",
+    "columnStatus": "Statut",
+    "columnModels": "Modèles",
+    "statusAvailable": "disponible",
+    "statusUnavailable": "indisponible"
+  },
+  "models": {
+    "title": "Modèles — {connection}",
+    "empty": "Aucun modèle disponible pour cette connexion.",
+    "columnName": "Nom",
+    "columnTable": "Table",
+    "columnItems": "Items",
+    "columnColumns": "Colonnes",
+    "searchPlaceholder": "Filtrer par nom ou table"
+  },
+  "items": {
+    "title": "Items — {model}",
+    "empty": "Aucun item disponible pour ce modèle.",
+    "new": "+ Nouvel item",
+    "page": "Page {current} / {last} ({total} item(s))"
+  },
+  "itemDetail": {
+    "title": "{model} — item {item}",
+    "breadcrumbItem": "Item {item}",
+    "null": "NULL",
+    "emptyString": "(chaîne vide)",
+    "yes": "Oui",
+    "no": "Non",
+    "brokenForeignKey": "item référencé introuvable",
+    "edit": "Modifier",
+    "delete": "Supprimer",
+    "confirmDelete": "Supprimer définitivement cet item ?",
+    "saved": "Modifications enregistrées.",
+    "deleted": "Item supprimé.",
+    "updateFailed": "La modification a échoué.",
+    "deleteFailed": "La suppression a échoué."
+  },
+  "itemForm": {
+    "technicalReadOnly": "(technique, lecture seule)",
+    "notEditable": "(non modifiable)",
+    "invalidJson": "JSON invalide.",
+    "save": "Enregistrer",
+    "cancel": "Annuler"
+  },
+  "itemCreate": {
+    "title": "{model} — nouvel item",
+    "breadcrumbNew": "Nouvel item",
+    "create": "Créer",
+    "created": "Item créé.",
+    "createFailed": "La création a échoué."
+  }
+}

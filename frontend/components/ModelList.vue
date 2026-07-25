@@ -18,14 +18,14 @@ function goToModel(model: ModelSummary) {
 
 <template>
   <!-- EX-301, limite « aucun modèle disponible » : message, pas d'erreur -->
-  <p v-if="models.length === 0">Aucun modèle disponible pour cette connexion.</p>
+  <p v-if="models.length === 0">{{ $t('models.empty') }}</p>
   <table v-else class="data-table">
     <thead>
       <tr>
-        <th>Nom</th>
-        <th>Table</th>
-        <th>Items</th>
-        <th>Colonnes</th>
+        <th>{{ $t('models.columnName') }}</th>
+        <th>{{ $t('models.columnTable') }}</th>
+        <th>{{ $t('models.columnItems') }}</th>
+        <th>{{ $t('models.columnColumns') }}</th>
       </tr>
     </thead>
     <tbody>

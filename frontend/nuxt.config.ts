@@ -13,6 +13,7 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
   ssr: !isPackageBuild,
+  modules: ['@nuxtjs/i18n'],
 
   app: {
     head: {
@@ -24,6 +25,23 @@ export default defineNuxtConfig({
   },
 
   css: ['~/assets/css/main.css'],
+
+  // EX-114 à EX-119 : enveloppe de l'IHM du plug-in traduite FR/EN (Phase 8).
+  // Ne couvre jamais les données métier (noms de modèles/colonnes, valeurs
+  // d'items, messages bruts de `DatabaseErrorTranslator`, EX-118).
+  i18n: {
+    locales: [
+      { code: 'fr', name: 'Français', file: 'fr.json' },
+      { code: 'en', name: 'English', file: 'en.json' },
+    ],
+    langDir: 'locales',
+    lazy: true,
+    // EX-115 : le français s'affiche au premier accès, indépendamment de la
+    // langue du navigateur — pas de redirection/détection automatique.
+    defaultLocale: 'fr',
+    strategy: 'no_prefix',
+    detectBrowserLanguage: false,
+  },
 
   // EX-104/EX-105 : le front consomme l'API du plug-in sous le préfixe
   // configuré côté Laravel (config/modelbase.php: route_prefix), suivi du

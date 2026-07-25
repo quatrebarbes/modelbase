@@ -25,7 +25,7 @@ defineProps<{
       <dt class="field-grid__label">{{ entry.column }}</dt>
       <dd>
         <!-- EX-409 : rendu distinct d'une valeur nulle vs une chaîne vide -->
-        <span v-if="entry.is_null" class="item-detail__null">NULL</span>
+        <span v-if="entry.is_null" class="item-detail__null">{{ $t('itemDetail.null') }}</span>
 
         <!-- EX-408/EX-410 : lien vers l'item référencé, ou indicateur de FK cassée -->
         <template v-else-if="entry.type === 'foreign_key'">
@@ -36,14 +36,14 @@ defineProps<{
             {{ entry.value }} ({{ entry.foreign_key.model }})
           </NuxtLink>
           <span v-else class="item-detail__broken-fk">
-            {{ entry.value }} — item référencé introuvable
+            {{ entry.value }} — {{ $t('itemDetail.brokenForeignKey') }}
           </span>
         </template>
 
         <!-- EX-407 : rendu adapté au type de la colonne -->
         <pre v-else-if="entry.type === 'json'">{{ JSON.stringify(entry.value, null, 2) }}</pre>
-        <span v-else-if="entry.type === 'boolean'">{{ entry.value ? 'Oui' : 'Non' }}</span>
-        <span v-else-if="entry.value === ''" class="item-detail__empty-string">(chaîne vide)</span>
+        <span v-else-if="entry.type === 'boolean'">{{ entry.value ? $t('itemDetail.yes') : $t('itemDetail.no') }}</span>
+        <span v-else-if="entry.value === ''" class="item-detail__empty-string">{{ $t('itemDetail.emptyString') }}</span>
         <span v-else>{{ entry.value }}</span>
       </dd>
     </template>

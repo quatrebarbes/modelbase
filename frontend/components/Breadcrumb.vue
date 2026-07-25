@@ -10,7 +10,7 @@ defineProps<{
 </script>
 
 <template>
-  <nav class="breadcrumb" aria-label="Fil d'Ariane">
+  <nav class="breadcrumb" :aria-label="$t('common.breadcrumbLabel')">
     <template v-for="(item, index) in items" :key="index">
       <NuxtLink v-if="item.to" :to="item.to" class="breadcrumb__link">{{ item.label }}</NuxtLink>
       <span v-else class="breadcrumb__current" aria-current="page">{{ item.label }}</span>
