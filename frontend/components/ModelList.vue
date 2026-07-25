@@ -6,10 +6,14 @@ type ModelSummary = {
   column_count: number
 }
 
-defineProps<{
+const props = defineProps<{
   connection: string
   models: ModelSummary[]
 }>()
+
+function goToModel(model: ModelSummary) {
+  navigateTo(`/connections/${props.connection}/models/${model.name}`)
+}
 </script>
 
 <template>
@@ -29,7 +33,9 @@ defineProps<{
       <tr
         v-for="model in models"
         :key="model.name"
-        @click="navigateTo(`/connections/${connection}/models/${model.name}`)"
+        tabindex="0"
+        @click="goToModel(model)"
+        @keydown.enter="goToModel(model)"
       >
         <td>{{ model.name }}</td>
         <td>{{ model.table }}</td>

@@ -8,6 +8,7 @@ const model = route.params.model as string
 const item = route.params.item as string
 
 const api = useApiClient()
+const toast = useToast()
 const { data, refresh } = await useAsyncData(
   `item-${connection}-${model}-${item}`,
   () => api(`/connections/${connection}/models/${model}/items/${item}`)
@@ -29,6 +30,8 @@ const submitting = ref(false)
 const deleting = ref(false)
 const deleteError = ref<string | null>(null)
 
+useHead({ title: `${model} — item ${item}` })
+
 async function handleSubmit(submitted: Record<string, unknown>) {
   submitting.value = true
   errors.value = {}
@@ -41,6 +44,7 @@ async function handleSubmit(submitted: Record<string, unknown>) {
 
     await refresh()
     editing.value = false
+    toast.show('Modifications enregistrées.')
   } catch (error: any) {
     errors.value = error?.data?.errors ?? { _general: ['La modification a échoué.'] }
   } finally {
@@ -60,6 +64,7 @@ async function handleDelete() {
   try {
     await api(`/connections/${connection}/models/${model}/items/${item}`, { method: 'DELETE' })
     await navigateTo(`/connections/${connection}/models/${model}`)
+    toast.show('Item supprimé.')
   } catch (error: any) {
     deleteError.value = error?.data?.message ?? 'La suppression a échoué.'
     deleting.value = false
@@ -69,11 +74,16 @@ async function handleDelete() {
 
 <template>
   <main>
+    <!-- EX-411 : retour au listing des items du modèle, assuré par le fil d'Ariane -->
+    <Breadcrumb :items="[
+      { label: 'Bases de données', to: '/' },
+      { label: connection, to: `/connections/${connection}` },
+      { label: model, to: `/connections/${connection}/models/${model}` },
+      { label: `Item ${item}` },
+    ]" />
     <h1>{{ model }} — item {{ item }}</h1>
-    <div class="toolbar">
-      <!-- EX-411 : retour au listing des items du modèle -->
-      <NuxtLink :to="`/connections/${connection}/models/${model}`" class="toolbar__link">← Listing</NuxtLink>
-      <div v-if="!editing" class="toolbar__actions">
+    <div v-if="!editing" class="toolbar">
+      <div class="toolbar__actions">
         <button type="button" class="btn btn--primary" @click="editing = true">Modifier</button>
         <!-- EX-418/EX-419 : confirmation obligatoire avant suppression -->
         <button type="button" class="btn btn--danger" :disabled="deleting" @click="handleDelete">Supprimer</button>

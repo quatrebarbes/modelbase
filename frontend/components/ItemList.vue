@@ -8,6 +8,10 @@ const props = defineProps<{
 }>()
 
 const columns = computed(() => (props.items.length ? Object.keys(props.items[0]) : []))
+
+function goToItem(item: ItemRow) {
+  navigateTo(`/connections/${props.connection}/models/${props.model}/items/${item.id}`)
+}
 </script>
 
 <template>
@@ -24,7 +28,9 @@ const columns = computed(() => (props.items.length ? Object.keys(props.items[0])
       <tr
         v-for="item in items"
         :key="String(item.id)"
-        @click="navigateTo(`/connections/${connection}/models/${model}/items/${item.id}`)"
+        tabindex="0"
+        @click="goToItem(item)"
+        @keydown.enter="goToItem(item)"
       >
         <td v-for="column in columns" :key="column">{{ item[column] }}</td>
       </tr>

@@ -2,7 +2,8 @@
 
 Plug-in Laravel de gestion des données d'une application Laravel : parcours des connexions de bases de données, des modèles Eloquent qu'elles contiennent, et de leurs items — sans données propres au plug-in (tout est introspecté dynamiquement depuis l'application hôte).
 
-> **Statut** : Phase 0 (socle technique) terminée. Aucune fonctionnalité métier n'est encore exposée — voir [docs/roadmap.md](docs/roadmap.md).
+**Ce n'est pas une base de données mais une base de modèles.**  
+**This is not a database but a modelbase.**
 
 ## Prérequis
 
@@ -18,7 +19,9 @@ composer require quatrebarbes/modelbase
 php artisan vendor:publish --tag=modelbase-config
 ```
 
-La configuration (`config/modelbase.php`) permet de personnaliser le préfixe des routes du plug-in et d'exclure certaines connexions du listing.
+La configuration (`config/modelbase.php`) permet de personnaliser le préfixe des routes du plug-in, le guard d'authentification utilisé (par défaut celui de l'app hôte) et d'exclure certaines connexions du listing.
+
+> ⚠️ **Avertissement sécurité** : le plug-in n'applique aucune restriction basée sur un rôle ou un droit utilisateur — tout utilisateur authentifié via le guard configuré a un accès en lecture et en écriture (création, modification, suppression) à l'ensemble des connexions, modèles et items exposés par l'application hôte. Ne jamais activer ce plug-in sur un guard accessible à des utilisateurs non-privilégiés (clients, etc.) : configurez `modelbase.guard` sur un guard dédié aux seules personnes de confiance (ex. les administrateurs), ou restreignez l'accès aux routes du plug-in (préfixe `modelbase.route_prefix`) en amont, au niveau de l'application hôte.
 
 ## Structure du repo
 

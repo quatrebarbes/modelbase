@@ -9,6 +9,12 @@ type Connection = {
 defineProps<{
   connections: Connection[]
 }>()
+
+function goToConnection(connection: Connection) {
+  if (connection.status === 'available') {
+    navigateTo(`/connections/${connection.name}`)
+  }
+}
 </script>
 
 <template>
@@ -27,7 +33,9 @@ defineProps<{
         v-for="connection in connections"
         :key="connection.name"
         :class="{ 'connection-list__row--unavailable': connection.status !== 'available' }"
-        @click="connection.status === 'available' && navigateTo(`/connections/${connection.name}`)"
+        :tabindex="connection.status === 'available' ? 0 : undefined"
+        @click="goToConnection(connection)"
+        @keydown.enter="goToConnection(connection)"
       >
         <td>{{ connection.name }}</td>
         <td>{{ connection.driver }}</td>

@@ -8,7 +8,7 @@ const api = useApiClient()
 const page = ref(1)
 const perPage = 15
 
-const { data } = await useAsyncData(
+const { data, pending } = await useAsyncData(
   () => `items-${connection}-${model}-${page.value}`,
   () => api(`/connections/${connection}/models/${model}/items`, {
     query: { page: page.value, per_page: perPage },
@@ -18,13 +18,19 @@ const { data } = await useAsyncData(
 
 const items = computed(() => data.value?.data ?? [])
 const meta = computed(() => data.value?.meta)
+
+useHead({ title: `Items — ${model}` })
 </script>
 
 <template>
   <main>
+    <Breadcrumb :items="[
+      { label: 'Bases de données', to: '/' },
+      { label: connection, to: `/connections/${connection}` },
+      { label: model },
+    ]" />
     <h1>Items — {{ model }}</h1>
     <div class="toolbar">
-      <NuxtLink :to="`/connections/${connection}`" class="toolbar__link">← Modèles</NuxtLink>
       <!-- EX-412 : point d'entrée vers la création d'un nouvel item -->
       <NuxtLink
         :to="`/connections/${connection}/models/${model}/items/create`"
@@ -34,6 +40,9 @@ const meta = computed(() => data.value?.meta)
       </NuxtLink>
     </div>
     <ItemList :connection="connection" :model="model" :items="items" />
-    <ItemPagination v-if="meta && meta.total > 0" v-model:page="page" :meta="meta" />
+    <div v-if="meta && meta.total > 0" class="item-pagination-row">
+      <ItemPagination v-model:page="page" :meta="meta" />
+      <Spinner v-if="pending" />
+    </div>
   </main>
 </template>

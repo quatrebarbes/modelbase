@@ -4,6 +4,8 @@ const api = useApiClient()
 const { data } = await useAsyncData('connections', () => api('/connections'))
 
 const connections = computed(() => data.value?.data ?? [])
+
+useHead({ title: 'Bases de données' })
 </script>
 
 <template>

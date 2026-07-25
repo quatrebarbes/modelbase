@@ -6,28 +6,40 @@ const connection = route.params.connection as string
 const api = useApiClient()
 const search = ref('')
 
-const { data } = await useAsyncData(
-  () => `models-${connection}-${search.value}`,
+// Attend une pause de frappe avant d'interroger l'API, pour ne pas relancer
+// une requête à chaque caractère tapé.
+const debouncedSearch = ref('')
+let debounceTimer: ReturnType<typeof setTimeout>
+watch(search, (value) => {
+  clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => { debouncedSearch.value = value }, 300)
+})
+
+const { data, pending } = await useAsyncData(
+  () => `models-${connection}-${debouncedSearch.value}`,
   () => api(`/connections/${connection}/models`, {
-    query: search.value ? { search: search.value } : {},
+    query: debouncedSearch.value ? { search: debouncedSearch.value } : {},
   }),
-  { watch: [search] }
+  { watch: [debouncedSearch] }
 )
 
 const models = computed(() => data.value?.data ?? [])
+
+useHead({ title: `Modèles — ${connection}` })
 </script>
 
 <template>
   <main>
+    <Breadcrumb :items="[{ label: 'Bases de données', to: '/' }, { label: connection }]" />
     <h1>Modèles — {{ connection }}</h1>
     <div class="toolbar">
-      <NuxtLink to="/" class="toolbar__link">← Bases de données</NuxtLink>
       <input
         v-model="search"
         type="search"
         placeholder="Filtrer par nom ou table"
         class="toolbar__search"
       />
+      <Spinner v-if="pending" />
     </div>
     <ModelList :connection="connection" :models="models" />
   </main>

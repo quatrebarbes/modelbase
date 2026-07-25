@@ -29,6 +29,11 @@
   cursor: pointer;
 }
 
+.data-table tbody tr:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
 /* Barre de navigation/recherche au-dessus d'un tableau ou formulaire */
 .toolbar {
   display: flex;
@@ -131,4 +136,10 @@
 .toolbar__actions {
   display: flex;
   gap: 0.6rem;
+}
+
+.item-pagination-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
