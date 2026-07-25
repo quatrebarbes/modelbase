@@ -3,6 +3,7 @@
 use Quatrebarbes\Modelbase\Http\Controllers\ConnectionController;
 use Quatrebarbes\Modelbase\Http\Controllers\ItemController;
 use Quatrebarbes\Modelbase\Http\Controllers\ModelController;
+use Quatrebarbes\Modelbase\Http\Controllers\RelationController;
 use Quatrebarbes\Modelbase\Http\Middleware\Authenticate;
 use Quatrebarbes\Modelbase\Http\Middleware\EnsureConnectionIsNavigable;
 use Quatrebarbes\Modelbase\Http\Middleware\EnsureModelIsNavigable;
@@ -44,6 +45,13 @@ Route::prefix(config('modelbase.route_prefix').'/api')
                         Route::get('/columns', [ItemController::class, 'columns'])
                             ->name('connections.models.columns.index');
 
+                        // EX-306/EX-307/EX-308/EX-309/EX-426 : relations
+                        // Eloquent déclarées par le modèle hôte, source
+                        // unique consommée par le diagramme (module 3) et
+                        // par les tableaux d'objets liés (module 4).
+                        Route::get('/relations', [RelationController::class, 'index'])
+                            ->name('connections.models.relations.index');
+
                         Route::get('/items', [ItemController::class, 'index'])
                             ->name('connections.models.items.index');
 
@@ -61,6 +69,11 @@ Route::prefix(config('modelbase.route_prefix').'/api')
                         // EX-418/EX-420 : suppression d'un item existant.
                         Route::delete('/items/{item}', [ItemController::class, 'destroy'])
                             ->name('connections.models.items.destroy');
+
+                        // EX-427/EX-428/EX-429/EX-430/EX-431 : listing paginé
+                        // des objets liés d'une relation de cet item.
+                        Route::get('/items/{item}/relations/{relation}', [RelationController::class, 'items'])
+                            ->name('connections.models.items.relations.index');
                     });
             });
     });

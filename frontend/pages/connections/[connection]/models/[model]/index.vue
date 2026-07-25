@@ -20,6 +20,9 @@ const { data, pending } = await useAsyncData(
 const items = computed(() => data.value?.data ?? [])
 const meta = computed(() => data.value?.meta)
 
+// EX-306 : accès au diagramme des relations depuis le listing des items.
+const showDiagram = ref(false)
+
 useHead({ title: t('items.title', { model }) })
 </script>
 
@@ -32,14 +35,26 @@ useHead({ title: t('items.title', { model }) })
     ]" />
     <h1>{{ $t('items.title', { model }) }}</h1>
     <div class="toolbar">
-      <!-- EX-412 : point d'entrée vers la création d'un nouvel item -->
-      <NuxtLink
-        :to="`/connections/${connection}/models/${model}/items/create`"
-        class="btn btn--primary"
-      >
-        {{ $t('items.new') }}
-      </NuxtLink>
+      <div class="toolbar__actions">
+        <!-- EX-412 : point d'entrée vers la création d'un nouvel item -->
+        <NuxtLink
+          :to="`/connections/${connection}/models/${model}/items/create`"
+          class="btn btn--primary"
+        >
+          {{ $t('items.new') }}
+        </NuxtLink>
+        <!-- EX-306 : ouvre le diagramme des relations Eloquent du modèle dans un panneau latéral -->
+        <button type="button" class="btn" @click="showDiagram = true">
+          {{ $t('relations.showDiagram') }}
+        </button>
+      </div>
     </div>
+    <RelationDiagram
+      v-if="showDiagram"
+      :connection="connection"
+      :model="model"
+      @close="showDiagram = false"
+    />
     <ItemList :connection="connection" :model="model" :items="items" />
     <div v-if="meta && meta.total > 0" class="item-pagination-row">
       <ItemPagination v-model:page="page" :meta="meta" />

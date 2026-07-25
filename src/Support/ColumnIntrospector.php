@@ -75,7 +75,7 @@ class ColumnIntrospector
      */
     public function relationForeignKeys(Model $instance): array
     {
-        $denylist = $this->methodDenylist();
+        $denylist = RelationMethodDenylist::get();
         $relations = [];
 
         foreach ((new ReflectionClass($instance))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
@@ -104,35 +104,6 @@ class ColumnIntrospector
         }
 
         return $relations;
-    }
-
-    /**
-     * Méthodes publiques sans paramètre requis à ne jamais invoquer à
-     * l'aveugle lors de l'introspection : celles de `Model` lui-même
-     * (`save`/`delete`/`push`/`touch`/`refresh`/`fresh`/`replicate`/...,
-     * capturées d'un bloc via réflexion plutôt qu'énumérées à la main) plus
-     * quelques méthodes fournies par des traits courants mais absentes de
-     * `Model`, aux effets de bord réels si invoquées (`SoftDeletes`).
-     * Limite documentée : un trait tiers ajoutant sa propre méthode publique
-     * sans paramètre et à effet de bord (hors `SoftDeletes`) ne serait pas
-     * couvert par cette liste.
-     *
-     * @return array<int, string>
-     */
-    private function methodDenylist(): array
-    {
-        static $denylist = null;
-
-        if ($denylist === null) {
-            $denylist = array_map(
-                fn (ReflectionMethod $method) => $method->getName(),
-                (new ReflectionClass(Model::class))->getMethods(ReflectionMethod::IS_PUBLIC)
-            );
-
-            $denylist = array_merge($denylist, ['restore', 'forceDelete', 'trashed', 'isForceDeleting']);
-        }
-
-        return $denylist;
     }
 
     /**

@@ -77,6 +77,10 @@ defineProps<{
   color: var(--color-error-text);
 }
 
+.item-detail dd a {
+  color: var(--color-text-muted);
+}
+
 /* EX-112 : un lien adopte la couleur de survol */
 .item-detail dd a:hover {
   color: var(--color-hover-text);

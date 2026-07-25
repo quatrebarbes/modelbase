@@ -18,9 +18,17 @@ const { data: columnsData } = await useAsyncData(
   `item-columns-${connection}-${model}`,
   () => api(`/connections/${connection}/models/${model}/columns`)
 )
+// EX-425 : un tableau par relation déclarée par le modèle hôte, sous les
+// valeurs de colonnes — `belongsTo` exclue (déjà couverte par la valeur de
+// colonne de clé étrangère, EX-408).
+const { data: relationsData } = await useAsyncData(
+  `item-relations-${connection}-${model}`,
+  () => api(`/connections/${connection}/models/${model}/relations`)
+)
 
 const values = computed(() => data.value?.data?.values ?? [])
 const columns = computed(() => columnsData.value?.data ?? [])
+const relations = computed(() => (relationsData.value?.data ?? []).filter((relation: { type: string }) => relation.type !== 'BelongsTo'))
 const initialValues = computed(() => Object.fromEntries(
   values.value.map((entry: { column: string; value: unknown }) => [entry.column, entry.value])
 ))
@@ -105,7 +113,17 @@ async function handleDelete() {
       @submit="handleSubmit"
       @cancel="editing = false"
     />
-    <ItemDetail v-else :connection="connection" :values="values" />
+    <template v-else>
+      <ItemDetail :connection="connection" :values="values" />
+      <!-- EX-425 à EX-431 : tableaux paginés des objets liés par relation,
+           regroupés sous des onglets dès qu'il y en a plus d'une -->
+      <RelationTabs
+        :connection="connection"
+        :model="model"
+        :item="item"
+        :relations="relations"
+      />
+    </template>
   </main>
 </template>
 

@@ -48,6 +48,16 @@
     "updateFailed": "The update failed.",
     "deleteFailed": "The deletion failed."
   },
+  "relations": {
+    "showDiagram": "View relations",
+    "diagramTitle": "Relations — {model}",
+    "diagramEmpty": "This model declares no relation to another model.",
+    "diagramError": "The diagram could not be displayed.",
+    "close": "Close",
+    "unavailableModel": "connection unavailable",
+    "unavailableConnection": "Connection “{connection}” unavailable.",
+    "empty": "No related item."
+  },
   "itemForm": {
     "technicalReadOnly": "(technical, read-only)",
     "notEditable": "(not editable)",
