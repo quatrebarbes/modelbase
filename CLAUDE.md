@@ -21,6 +21,7 @@ Celui-ci permet de parcourir :
 - Migrations avant models, models avant controllers
 - Tests Feature pour chaque endpoint API
 - Tests Unit pour chaque fonction
+- Avant de commit un changement dans `frontend/`, relancer `./docker/build-front-package.sh` et committer le résultat dans `resources/dist/modelbase/` (cf. docs/roadmap.md Phase 6) — sinon le build publié via `vendor:publish` reste désynchronisé du code source
 
 ## Documentation
 

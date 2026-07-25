@@ -7,7 +7,8 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "build:package": "MODELBASE_PACKAGE_BUILD=true nuxt generate && rm -rf ../resources/dist/modelbase && mkdir -p ../resources/dist && cp -r .output/public ../resources/dist/modelbase"
   },
   "dependencies": {
     "nuxt": "^3.21.9",

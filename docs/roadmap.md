@@ -1,6 +1,6 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-25 (Phase 5).
+Dernière mise à jour : 2026-07-25 (Phase 6).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
@@ -29,7 +29,7 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 | 4c    | Items — suppression           | ✅ fait    |
 | 4d    | Items — fidélité Eloquent     | ✅ fait    |
 | 5     | Ergonomie front (modules 3-4) | ✅ fait    |
-| 6     | Exposition du front           | ⬜ à faire |
+| 6     | Exposition du front           | ✅ fait    |
 | 7     | Points ouverts / backlog      | ⬜ à faire |
 
 ---
@@ -179,11 +179,14 @@ Améliorations d'ergonomie apportées au front Nuxt suite à une revue à froid 
 
 ## Phase 6 — Exposition du front par le plug-in (module 1, EX-105/EX-106)
 
-Le module 1 (Architecture générale) couvre aussi l'exposition et le routage du plug-in (EX-104 à EX-106), au-delà du contrôle d'accès (EX-101 à EX-103, Phase 1). EX-104 est acquis (`config('modelbase.route_prefix')`, cf. Phase 0), mais EX-105/EX-106 n'ont jamais été suivis dans cette roadmap et ne sont pas satisfaits par l'état actuel : le front Nuxt tourne dans son propre conteneur Docker (cf. points d'attention Phase 3), proxifié depuis Nitro — il n'est ni construit ni servi via le mécanisme `vendor:publish` du plug-in, et le plug-in ne définit aucune route front sous son préfixe commun.
+Le module 1 (Architecture générale) couvre aussi l'exposition et le routage du plug-in (EX-104 à EX-106), au-delà du contrôle d'accès (EX-101 à EX-103, Phase 1). EX-104 était déjà acquis (`config('modelbase.route_prefix')`, cf. Phase 0). EX-105/EX-106 étaient restées non suivies (« à trancher » dans une version antérieure de cette roadmap) entre deux architectures : ne jamais servir le front en production (SPA déployé séparément par l'app hôte), ou le publier via `vendor:publish` et le servir par une route dédiée du plug-in. **Décision tranchée avec l'utilisateur** : la seconde option.
 
-- [ ] Les routes API sont distinguées des routes front par un segment dédié sous le préfixe commun (EX-105) — actuellement seul `routes/api.php` existe (aucune route front définie par le plug-in) ; à trancher : soit le plug-in ne sert jamais lui-même le front en production et EX-105 est sans objet (le préfixe commun ne s'appliquant qu'à l'API), soit un jour un `routes/web.php` catch-all sert le SPA buildé sous un segment dédié (ex. `modelbase/app/*` vs `modelbase/api/*`) — l'architecture docker-compose actuelle (conteneur Nuxt séparé) est explicitement dev/test-only (cf. Phase 0), donc hors périmètre de cette question
-- [ ] Les assets compilés du front sont publiables via `vendor:publish`, sans être servis dynamiquement par le plug-in (EX-106) — aucun tag `publishes()` pour un build front n'existe dans `ModelbaseServiceProvider` (seul `modelbase-config` y est déclaré) ; nécessite un build Nuxt en mode statique/SSG (ou SPA) committé/généré dans le package, publié dans `public/vendor/modelbase` de l'app hôte
-- Ce point conditionne la mise en production réelle du plug-in : l'environnement docker-compose actuel valide le comportement fonctionnel (modules 2-4) mais pas encore l'installation du plug-in dans une vraie application hôte tierce, qui est le scénario que ces deux exigences couvrent
+- [x] Les routes API sont distinguées des routes front par un segment dédié sous le préfixe commun (EX-105) — nouveau `routes/web.php`, groupe `Route::prefix(config('modelbase.route_prefix').'/app')` (ex. `/modelbase/app`), distinct du groupe `/api` de `routes/api.php` ; même middleware `['web', Authenticate::class]` que l'API (EX-101/EX-103)
+- [x] Les assets compilés du front sont publiables via `vendor:publish`, sans être servis dynamiquement par le plug-in (EX-106) — nouveau tag `modelbase-assets` dans `ModelbaseServiceProvider` (`resources/dist/modelbase` → `public_path('vendor/modelbase')`) ; les fichiers `_nuxt/**` publiés sont de simples fichiers statiques servis directement par le serveur web de l'app hôte, jamais par une route Laravel
+- [x] Build front : `frontend/nuxt.config.ts` bascule en SPA statique (`ssr: false`, `app.baseURL: '/modelbase/app/'`) quand `MODELBASE_PACKAGE_BUILD=true`, sans dupliquer la config du conteneur `frontend` (SSR, dev/test only, inchangé) — `npm run build:package` (Node 20+ requis, cf. Phase 3) génère `resources/dist/modelbase/`, committé ; script maintainer `docker/build-front-package.sh` (conteneur `node:22-slim` jetable, cohérent avec le choix déjà fait pour le conteneur `frontend`)
+- [x] `Http\Controllers\SpaController` sert le seul point d'entrée (`index.html` publié) sur la route catch-all `{prefix}/app/{any?}` — le routage interne (Vue Router, historique HTML5) prend le relais côté navigateur pour tout sous-chemin ; erreur explicite (500, message `vendor:publish --tag=modelbase-assets`) si les assets n'ont jamais été publiés, plutôt qu'une page blanche silencieuse
+- Tests Feature : `tests/Feature/FrontRoutingTest.php` (401 sans redirection si non authentifié, shell SPA servi si authentifié, tout sous-chemin résout vers le même shell, erreur explicite si assets non publiés, segments `app`/`api` distincts)
+- **Vérifié manuellement contre l'environnement `docker-compose` réel** (pas seulement en tests Feature avec assets simulés) : `php artisan vendor:publish --tag=modelbase-assets --force` dans le conteneur `app`, puis authentification via `/dev-login` et requêtes `curl` réelles sur `http://localhost:8000/modelbase/app` — 401 sans authentification, 200 avec le shell SPA une fois authentifié (`window.__NUXT__.config` reflète bien `baseURL: "/modelbase/app/"` et `apiBase: "/modelbase/api"`, les URLs d'assets sont correctement préfixées), un sous-chemin profond (`/modelbase/app/connections/mysql`) résout au même shell, et `/modelbase/api/connections` reste joignable sous son propre segment. Non vérifié visuellement dans un navigateur réel (`chromium-cli` indisponible dans cet environnement) : le shell HTML et sa configuration d'amorçage sont corrects, et le bundle Vue compilé est inchangé par rapport à celui déjà validé visuellement sur le conteneur `frontend` (port 3000, Phases 3-5) — seuls le mode de build (SPA statique) et le chemin de base changent.
 
 ## Phase 7 — Points ouverts / backlog
 

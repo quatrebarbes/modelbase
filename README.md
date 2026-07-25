@@ -17,9 +17,12 @@ Plug-in Laravel de gestion des données d'une application Laravel : parcours des
 ```bash
 composer require quatrebarbes/modelbase
 php artisan vendor:publish --tag=modelbase-config
+php artisan vendor:publish --tag=modelbase-assets
 ```
 
 La configuration (`config/modelbase.php`) permet de personnaliser le préfixe des routes du plug-in, le guard d'authentification utilisé (par défaut celui de l'app hôte) et d'exclure certaines connexions du listing.
+
+Le front (SPA Nuxt) est accessible sous `{route_prefix}/app` (`/modelbase/app` par défaut), distinct du segment `{route_prefix}/api` de l'API (EX-105) — `php artisan vendor:publish --tag=modelbase-assets` publie les assets compilés dans `public/vendor/modelbase` de l'app hôte (EX-106) ; à ré-exécuter (`--force`) après chaque mise à jour du plug-in, sous peine de servir une version obsolète du front.
 
 > ⚠️ **Avertissement sécurité** : le plug-in n'applique aucune restriction basée sur un rôle ou un droit utilisateur — tout utilisateur authentifié via le guard configuré a un accès en lecture et en écriture (création, modification, suppression) à l'ensemble des connexions, modèles et items exposés par l'application hôte. Ne jamais activer ce plug-in sur un guard accessible à des utilisateurs non-privilégiés (clients, etc.) : configurez `modelbase.guard` sur un guard dédié aux seules personnes de confiance (ex. les administrateurs), ou restreignez l'accès aux routes du plug-in (préfixe `modelbase.route_prefix`) en amont, au niveau de l'application hôte.
 
@@ -27,6 +30,7 @@ La configuration (`config/modelbase.php`) permet de personnaliser le préfixe de
 
 - [src/](src/), [config/](config/), [routes/](routes/) — le package Laravel (`Quatrebarbes\Modelbase\`)
 - [frontend/](frontend/) — SPA Nuxt 3 consommant l'API du plug-in
+- [resources/dist/modelbase/](resources/dist/modelbase/) — build statique du front (généré par `docker/build-front-package.sh`, committé), publié tel quel via `vendor:publish --tag=modelbase-assets` (EX-106)
 - [demo/](demo/) — application Laravel hôte de démonstration, utilisée uniquement en dev/test
 - [docker-compose.yml](docker-compose.yml) — environnement de dev/test (app de démo + front Nuxt + mysql + pgsql)
 - [docs/roadmap.md](docs/roadmap.md) — plan de développement et avancement
@@ -49,6 +53,16 @@ Pour lancer le front hors Docker (nécessite Node 20+, le CLI Nuxt échoue sur d
 ```bash
 cd frontend && npm install && npm run dev
 ```
+
+## Rebuild du front pour le package (EX-106)
+
+Le conteneur `frontend` du docker-compose ci-dessus (SSR, dev/test only) est distinct du build statique livré dans le package (SPA, `ssr: false`, cf. `frontend/nuxt.config.ts`). À regénérer après toute modification du front, avant de publier une nouvelle version du plug-in :
+
+```bash
+./docker/build-front-package.sh
+```
+
+Regénère `resources/dist/modelbase/` (via un conteneur `node:22-slim` jetable, cohérent avec la Phase 0 : le Node système peut être trop ancien pour le CLI Nuxt) — à committer, ce dossier étant ce que `vendor:publish --tag=modelbase-assets` distribue aux applications hôtes.
 
 ## Tests
 

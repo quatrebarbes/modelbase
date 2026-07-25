@@ -1,12 +1,26 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+
+// EX-106 : en dev/test (docker-compose, cf. Phase 0/3), le front tourne dans
+// son propre conteneur SSR derrière le proxy Nitro (routeRules ci-dessous).
+// Pour la publication du plug-in (vendor:publish, cf. ModelbaseServiceProvider
+// et `npm run build:package`), on bascule sur un build SPA statique
+// (ssr: false, servi comme un simple fichier index.html par le plug-in, cf.
+// routes/web.php + SpaController) — un seul et même nuxt.config, sans
+// dupliquer la configuration entre les deux modes.
+const isPackageBuild = process.env.MODELBASE_PACKAGE_BUILD === 'true'
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
+  ssr: !isPackageBuild,
 
   app: {
     head: {
       titleTemplate: '%s — Modelbase',
     },
+    // EX-105 : servi par le plug-in sous {route_prefix}/app (routes/web.php).
+    // Sans objet en dev/test (front à la racine de son propre conteneur).
+    baseURL: isPackageBuild ? (process.env.NUXT_APP_BASE_URL ?? '/modelbase/app/') : '/',
   },
 
   css: ['~/assets/css/main.css'],
@@ -17,7 +31,7 @@ export default defineNuxtConfig({
   // sans avoir à modifier le build (ex. si l'app hôte change le préfixe).
   runtimeConfig: {
     public: {
-      apiBase: '/modelbase/api',
+      apiBase: process.env.NUXT_PUBLIC_API_BASE ?? '/modelbase/api',
     },
   },
 
@@ -26,8 +40,9 @@ export default defineNuxtConfig({
   // en dev) : évite toute configuration CORS et garde la session de l'app
   // hôte utilisable telle quelle (EX-101, guard session-based par défaut).
   // Cible surchargeable via MODELBASE_API_ORIGIN (ex. si l'app hôte n'écoute
-  // pas sur localhost:8000).
-  routeRules: {
+  // pas sur localhost:8000). Sans objet pour le build SPA statique (EX-106) :
+  // servi par l'app hôte elle-même, same-origin par construction.
+  routeRules: isPackageBuild ? {} : {
     '/modelbase/api/**': {
       proxy: `${process.env.MODELBASE_API_ORIGIN ?? 'http://localhost:8000'}/modelbase/api/**`,
     },
