@@ -1,13 +1,13 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-24 (Phase 4c).
+Dernière mise à jour : 2026-07-25 (complément suite aux exigences EX-305, EX-421 à EX-424 ajoutées aux SFD 3 et 4, et prise en compte des exigences EX-105/EX-106 du module 1 jusqu'ici non suivies).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
-1. Architecture générale (EX-101, EX-102)
+1. Architecture générale (EX-101 à EX-106)
 2. Bases de données (EX-201 à EX-208)
-3. Modèles (EX-301 à EX-304)
-4. Items (EX-401 à EX-420)
+3. Modèles (EX-301 à EX-305)
+4. Items (EX-401 à EX-424)
 
 ## Architecture technique retenue
 
@@ -27,7 +27,9 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 | 4a    | Items — listing & détail      | ✅ fait    |
 | 4b    | Items — création/édition      | ✅ fait    |
 | 4c    | Items — suppression           | ✅ fait    |
-| 5     | Points ouverts / backlog      | ⬜ à faire |
+| 4d    | Items — fidélité Eloquent     | ⬜ à faire |
+| 5     | Exposition du front           | ⬜ à faire |
+| 6     | Points ouverts / backlog      | ⬜ à faire |
 
 ---
 
@@ -84,6 +86,7 @@ Points d'attention pour la suite :
 - [x] Filtre par nom ou par nom de table côté listing (EX-304), côté front et/ou query param API — implémenté côté API (query param `search`, insensible à la casse, sous-chaîne, matché sur `name` OU `table`) dans `ModelRepository::forConnection()` ; le front relance la requête via `useAsyncData` avec `watch` sur un champ de recherche
 - [x] Gestion du cas « aucun modèle éligible » (message, pas d'erreur) — limite documentée — API : tableau `data` vide, 200 ; front : message dédié dans `ModelList.vue`
 - [x] Gestion du cas « plusieurs modèles pointant vers la même table » (entrées distinctes) — limite documentée — `ModelRepository` construit une entrée par classe Eloquent, jamais par table ; testé explicitement
+- [x] Les modèles listés sont lus à partir du code de l'application hôte, pas de la base de données (EX-305) — déjà acquis par construction : `EloquentModelFinder` scanne les classes Eloquent déclarées (`app/Models`), aucune requête d'introspection de la base (`information_schema` ou équivalent) n'intervient dans le listing du module 3 — exigence ajoutée après coup aux SFD (cf. en-tête de ce document), sans impact sur le code
 - Tests Feature : `tests/Feature/ModelListingTest.php` (listing filtré par connexion, comptage colonnes/items, filtre par nom, filtre par table, connexion sans modèle, doublon de table, connexion indisponible/inconnue via la vraie route)
 - Test Unit : `tests/Unit/ModelRepositoryTest.php` (description modèle → table/item_count/column_count, filtre par nom insensible à la casse, filtre par table insensible à la casse, recherche vide non filtrante)
 
@@ -148,12 +151,29 @@ Points d'attention pour la suite :
 - **Sqlite n'applique aucune contrainte de clé étrangère par défaut**, contrairement à mysql/pgsql : `SQLiteConnector::configureForeignKeyConstraints()` ne touche au `PRAGMA foreign_keys` que si la clé `foreign_key_constraints` est explicitement présente dans la config de connexion. Les tests sqlite précédents (Phase 4a/4b) n'en avaient pas besoin (aucun test n'y déclenchait réellement une violation de FK) ; `ItemDeletionTest` l'active explicitement pour vérifier réellement EX-420 plutôt que de mocker la `QueryException` (déjà fait côté unitaire dans `DatabaseErrorTranslatorTest`).
 - **Vérifié manuellement contre mysql réel (docker-compose)**, au-delà des tests sqlite : suppression d'un item non référencé (succès), suppression d'un item inconnu (pas d'exception, `false` renvoyé) et tentative de suppression d'une catégorie de démo référencée par des produits — cette dernière n'a **pas** levé d'`ItemDeletionException`, la contrainte `products.category_id` du schéma de démo étant déclarée `cascadeOnDelete()` (pas de blocage à traduire, la BDD cascade elle-même). Confirme que le code ne fait que relayer le comportement réel de la BDD, sans jamais le forcer ni le contourner dans un sens ou dans l'autre — la donnée de démo mysql, altérée par ce test manuel (cascade réelle), a été restaurée via `php artisan db:wipe --database=pgsql --force && php artisan migrate:fresh --force && php artisan db:seed --force` (séquence documentée dans `docker/app-entrypoint.sh`, cf. Phase 0).
 
-## Phase 5 — Points ouverts / hors périmètre
+## Phase 4d — Items : fidélité à la modélisation Eloquent (EX-421 à EX-424)
 
-À trancher avec le métier avant ou pendant la Phase 4a/3 :
+Ces quatre exigences ont été ajoutées au module 4 après la clôture des phases 4a-4c. Elles ne sont **pas** satisfaites par l'implémentation actuelle, qui repose sciemment sur le query builder brut (`DB::table()`) plutôt que sur de véritables instances Eloquent — un choix explicitement documenté et assumé aux Phases 4b/4c pour contourner le mass assignment et écrire n'importe quelle colonne. EX-424 en particulier rend ce choix intenable tel quel : cette phase constitue donc une reprise du cœur de `Support\ItemRepository`, pas un simple ajout.
 
-- Choix des colonnes « principales » affichées dans le listing des items (limite Module 4) — proposition à valider : premières colonnes non-FK/non-JSON déclarées, configurable par modèle
+- [ ] Seules les colonnes fillable (`$fillable`/`$guarded`) du modèle hôte sont renseignables à la création/modification, en lecture seule sinon (EX-421) — `ItemRepository::writable()` ne filtre aujourd'hui que les colonnes techniques (clé primaire, timestamps), pas la mass-assignabilité Eloquent : à corriger, probablement via `Model::isFillable()`/`getGuarded()` exposées par une instance réelle, et à répercuter sur le champ `technical`/un nouveau champ dédié de l'endpoint `/columns` (EX-416 distingue déjà « technique », il faudra distinguer « non fillable » du reste)
+- [ ] Les colonnes d'un modèle sont lues à partir du code hôte (attributs Eloquent), seul leur type restant déduit du schéma de la base (EX-422) — `ColumnIntrospector`/`ItemRepository::columns()` partent aujourd'hui entièrement de `Schema::getColumns()` (une colonne de table, pas un attribut de modèle) : à revoir, en s'appuyant par exemple sur `$fillable`/les attributs castés du modèle hôte pour la liste des colonnes exposées, `Schema` restant la source du type
+- [ ] Les clés étrangères s'appuient sur les relations Eloquent déclarées par le modèle hôte (`belongsTo`, etc.), pas seulement sur les contraintes FK de la base (EX-423) — `ColumnIntrospector::foreignKeyFor()`/`ItemRepository::resolveForeignKey()` ne connaissent aujourd'hui que les contraintes FK réelles de la table (`Schema::getForeignKeys()`) : une relation Eloquent déclarée sans contrainte FK en base (cas courant, notamment sur mysql sans InnoDB strict ou par choix de l'app hôte) n'est aujourd'hui pas détectée comme colonne `FOREIGN_KEY` — à corriger en introspectant aussi les méthodes de relation du modèle hôte (réflexion sur les méthodes retournant une instance de `BelongsTo`)
+- [ ] Toute création/modification/suppression déclenche les événements Eloquent du modèle hôte (`creating`/`created`, `updating`/`updated`, `deleting`/`deleted`) (EX-424) — `ItemRepository::create()`/`update()`/`delete()` écrivent aujourd'hui directement via `DB::table()`, qui ne déclenche aucun événement Eloquent ni observer du modèle hôte : à remplacer par de véritables instances (`new $class` puis `->save()`/`->delete()`, ou `$class::create()`), en conservant le comportement déjà acquis (colonnes techniques en lecture seule, encodage JSON, traduction des erreurs de contrainte en 422/409) qui devra être revalidé une fois l'écriture passée par Eloquent (le mass assignment natif d'Eloquent recoupe d'ailleurs directement EX-421 ci-dessus, les deux points sont probablement à traiter ensemble)
+
+Point d'attention à anticiper : `paginate()` et `find()` pourront rester sur le query builder brut (lecture seule, EX-424 ne concerne que l'écriture) — seuls `create()`/`update()`/`delete()` sont concernés par EX-424. Les tests Feature/Unit des Phases 4a-4c (pagination, décoration par type, listing des colonnes) ne devraient donc pas être affectés par cette reprise ; ceux de 4b/4c couvrant `create()`/`update()`/`delete()` seront à rejouer contre le nouveau comportement.
+
+## Phase 5 — Exposition du front par le plug-in (module 1, EX-105/EX-106)
+
+Le module 1 (Architecture générale) couvre aussi l'exposition et le routage du plug-in (EX-104 à EX-106), au-delà du contrôle d'accès (EX-101 à EX-103, Phase 1). EX-104 est acquis (`config('modelbase.route_prefix')`, cf. Phase 0), mais EX-105/EX-106 n'ont jamais été suivis dans cette roadmap et ne sont pas satisfaits par l'état actuel : le front Nuxt tourne dans son propre conteneur Docker (cf. points d'attention Phase 3), proxifié depuis Nitro — il n'est ni construit ni servi via le mécanisme `vendor:publish` du plug-in, et le plug-in ne définit aucune route front sous son préfixe commun.
+
+- [ ] Les routes API sont distinguées des routes front par un segment dédié sous le préfixe commun (EX-105) — actuellement seul `routes/api.php` existe (aucune route front définie par le plug-in) ; à trancher : soit le plug-in ne sert jamais lui-même le front en production et EX-105 est sans objet (le préfixe commun ne s'appliquant qu'à l'API), soit un jour un `routes/web.php` catch-all sert le SPA buildé sous un segment dédié (ex. `modelbase/app/*` vs `modelbase/api/*`) — l'architecture docker-compose actuelle (conteneur Nuxt séparé) est explicitement dev/test-only (cf. Phase 0), donc hors périmètre de cette question
+- [ ] Les assets compilés du front sont publiables via `vendor:publish`, sans être servis dynamiquement par le plug-in (EX-106) — aucun tag `publishes()` pour un build front n'existe dans `ModelbaseServiceProvider` (seul `modelbase-config` y est déclaré) ; nécessite un build Nuxt en mode statique/SSG (ou SPA) committé/généré dans le package, publié dans `public/vendor/modelbase` de l'app hôte
+- Ce point conditionne la mise en production réelle du plug-in : l'environnement docker-compose actuel valide le comportement fonctionnel (modules 2-4) mais pas encore l'installation du plug-in dans une vraie application hôte tierce, qui est le scénario que ces deux exigences couvrent
+
+## Phase 6 — Points ouverts / backlog
+
+- Choix des colonnes « principales » affichées dans le listing des items (EX-402, limite non tranchée module 4) — proposition à valider : premières colonnes non-FK/non-JSON déclarées, configurable par modèle
 - Consultation de la structure d'une table (colonnes/types) indépendamment de la navigation vers ses items — explicitement hors module 3
 - Modification/suppression en masse de plusieurs items — explicitement hors module 4
 
-Ces points ne bloquent pas le développement mais doivent revenir sous forme d'exigences SFD complémentaires si le besoin se confirme (cf. skill `ba`).
+Ces points ne bloquent pas le développement mais doivent revenir sous forme d'exigences SFD complémentaires si le besoin se confirme (cf. skill `ba`) — c'est d'ailleurs déjà arrivé une fois : EX-305 et EX-421 à EX-424 (Phase 4d) sont nés de cette même liste de points ouverts entre la clôture de la Phase 4c et aujourd'hui.
