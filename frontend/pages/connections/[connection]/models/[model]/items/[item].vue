@@ -111,6 +111,6 @@ async function handleDelete() {
 
 <style scoped>
 .item-detail__delete-error {
-  color: var(--color-error);
+  color: var(--color-error-text);
 }
 </style>

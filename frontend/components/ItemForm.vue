@@ -175,7 +175,7 @@ function handleSubmit(): void {
   font-weight: 400;
   font-size: 0.8rem;
   font-style: italic;
-  opacity: 0.6;
+  color: var(--color-text-muted);
 }
 
 .item-form__control {
@@ -193,7 +193,17 @@ function handleSubmit(): void {
   padding: 0.4rem 0.7rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
   font: inherit;
+  transition: border-color 0.15s ease;
+}
+
+/* EX-112 : un champ adopte la couleur de survol — juste le contour */
+.item-form__control input:not(.item-form__checkbox):not(:disabled):hover,
+.item-form__control select:not(:disabled):hover,
+.item-form__control textarea:not(:disabled):hover {
+  border-color: var(--color-hover);
 }
 
 .item-form__control input:not(.item-form__checkbox):focus,
@@ -216,7 +226,7 @@ function handleSubmit(): void {
 }
 
 .item-form__error {
-  color: var(--color-error);
+  color: var(--color-error-text);
   font-size: 0.85rem;
   margin: 0;
 }

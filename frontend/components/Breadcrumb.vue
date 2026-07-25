@@ -35,13 +35,15 @@ defineProps<{
   text-decoration: none;
 }
 
+/* EX-112 : un lien adopte la couleur de survol */
 .breadcrumb__link:hover {
+  color: var(--color-hover-text);
   text-decoration: underline;
 }
 
 .breadcrumb__current {
   font-weight: 600;
-  color: #333;
+  color: var(--color-text);
 }
 
 .breadcrumb__separator {

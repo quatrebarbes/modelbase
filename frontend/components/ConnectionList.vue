@@ -51,4 +51,10 @@ function goToConnection(connection: Connection) {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* EX-112 ne s'applique qu'aux lignes navigables : une connexion
+   indisponible n'est pas une action interactive */
+.connection-list__row--unavailable:hover {
+  outline: none;
+}
 </style>

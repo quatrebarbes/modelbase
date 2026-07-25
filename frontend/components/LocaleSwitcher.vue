@@ -31,19 +31,23 @@ const { locale, locales, setLocale } = useI18n()
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-pill-bg);
-  color: #333;
+  color: var(--color-text);
   font: inherit;
   font-size: 0.8rem;
   cursor: pointer;
 }
 
+/* EX-112 : un bouton adopte la couleur de survol — juste le contour, y
+   compris pour l'option active (spécificité supérieure à
+   .locale-switcher__option--active, qui l'emporte donc sur son propre
+   border-color) */
 .locale-switcher__option:hover {
-  background: var(--color-pill-bg-hover);
+  border-color: var(--color-hover);
 }
 
 .locale-switcher__option--active {
   border-color: transparent;
-  background: var(--color-primary);
-  color: #fff;
+  background: var(--color-primary-fill);
+  color: var(--color-on-primary-fill);
 }
 </style>

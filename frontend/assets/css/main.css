@@ -1,15 +1,97 @@
+/*
+ * Palette EX-107 à EX-113 : fixe, intégrée au code (EX-107), basculant
+ * automatiquement clair/sombre via prefers-color-scheme (EX-108), sans
+ * sélecteur manuel dans l'IHM.
+ *
+ * Rôles nommés par la SFD, valeur identique dans les deux modes :
+ *   --color-primary  #1c9a97 (EX-110), --color-accent-1 #4e4feb,
+ *   --color-accent-2 #77f2a1 (EX-111), --color-hover #fc9b50 (EX-112).
+ * --color-text/--color-bg s'inversent entre les deux modes (EX-109).
+ *
+ * EX-113 (contraste AA, ratio >= 4,5:1 pour le texte courant) : la SFD ne
+ * fournit ces couleurs de rôle que pour identifier visuellement un élément,
+ * pas pour garantir leur lisibilité en tant que texte/fond une fois posées
+ * sur les couleurs de fond retenues (#ecf8f9 clair / #2c3c4c sombre) ou
+ * combinées à un texte blanc — vérifié par calcul (script Node jetable,
+ * formule de luminance relative WCAG), plusieurs combinaisons échouent :
+ *   - texte blanc sur --color-primary (#1c9a97) : ratio 3.43 (échec)
+ *   - --color-primary utilisé comme texte sur le fond clair ou sombre :
+ *     3.16 / 3.29 (échec)
+ *   - --color-error (#b91c1c) utilisé comme texte sur le fond sombre : 1.75
+ *     (échec, alors qu'il passe sur fond clair : 5.97)
+ *   - l'ancien gris de texte atténué (#888) et les bordures (#ddd/#999)
+ *     échouent aussi contre les nouveaux fonds
+ * D'où les variantes dérivées ci-dessous (--color-primary-fill,
+ * --color-on-primary-fill, --color-error-text, --color-text-muted,
+ * --color-border, --color-border-focus, --color-bg-muted,
+ * --color-pill-bg*), obtenues par ajustement de luminosité (HSL) de la
+ * teinte de départ jusqu'à satisfaire 4,5:1 (texte) ou 3:1 (élément non
+ * textuel : bordure, remplissage de bouton considéré comme large aplat),
+ * calculées une fois et figées ici en valeur statique plutôt que
+ * recalculées à l'exécution. La couleur de rôle brute (--color-primary,
+ * --color-accent-1/2, --color-hover) reste définie telle quelle pour tout
+ * usage décoratif non textuel (bordure fine, curseur de chargement) où
+ * elle satisfait déjà le seuil non textuel de 3:1.
+ *
+ * --color-hover (survol, EX-112) : le survol se traduit par une bordure/
+ * contour (boutons, lignes de tableau, champs) ou par la couleur de texte
+ * (liens) plutôt que par un aplat de fond — la teinte #fc9b50 elle-même
+ * reste inchangée dans les deux cas. Pour une bordure (élément non
+ * textuel), le seuil non textuel (3:1) suffit et #fc9b50 brut convient.
+ * Pour du texte de lien (« texte courant » au sens d'EX-113), #fc9b50 brut
+ * échoue sur le fond clair (ratio 1.95) : --color-hover-text fournit la
+ * variante assombrie (#b85203, 4.56:1) utilisée en mode clair ; en mode
+ * sombre #fc9b50 brut passe déjà (5.35:1), donc --color-hover-text y reste
+ * égal à --color-hover.
+ */
 :root {
-  --color-border: #ddd;
-  --color-border-focus: #999;
-  --color-bg-muted: #f5f5f5;
-  --color-text-muted: #888;
+  --color-text: #2c3c4c;
+  --color-bg: #ecf8f9;
+
+  --color-primary: #1c9a97;
+  --color-primary-fill: #188482;
+  --color-on-primary-fill: #ffffff;
+  --color-accent-1: #4e4feb;
+  --color-accent-2: #77f2a1;
+  --color-hover: #fc9b50;
+  --color-hover-text: #b85203;
+
   --color-error: #b91c1c;
-  --color-pill-bg: #f0f0f2;
-  --color-pill-bg-hover: #e2e2e6;
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
+  --color-error-text: #b91c1c;
+  --color-text-muted: #666666;
+  --color-border: #8e8e8e;
+  --color-border-focus: #5c6b75;
+  --color-bg-muted: #e4eef0;
+  --color-pill-bg: #e4eef0;
+  --color-pill-bg-hover: #d5e6e9;
+
   --radius-sm: 6px;
   --radius-pill: 999px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-text: #ecf8f9;
+    --color-bg: #2c3c4c;
+
+    --color-primary-fill: #21b6b3;
+    --color-on-primary-fill: #2c3c4c;
+    --color-hover-text: #fc9b50;
+
+    --color-error-text: #ed8989;
+    --color-text-muted: #bcbcbc;
+    --color-border: #7a8c96;
+    --color-border-focus: #b0bec5;
+    --color-bg-muted: #3a4a5a;
+    --color-pill-bg: #3a4a5a;
+    --color-pill-bg-hover: #46586a;
+  }
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
 /* Tableaux de listing (bases de données, modèles, items) */
@@ -34,6 +116,13 @@
   outline-offset: -2px;
 }
 
+/* EX-112 : une ligne de tableau navigable adopte la couleur de survol —
+   contour, pas un aplat de fond */
+.data-table tbody tr:hover {
+  outline: 2px solid var(--color-hover);
+  outline-offset: -2px;
+}
+
 /* Barre de navigation/recherche au-dessus d'un tableau ou formulaire */
 .toolbar {
   display: flex;
@@ -49,23 +138,31 @@
   padding: 0.4rem 0.9rem;
   border-radius: var(--radius-pill);
   background: var(--color-pill-bg);
-  color: #333;
+  color: var(--color-text);
   text-decoration: none;
   font-size: 0.9rem;
-  transition: background-color 0.15s ease;
+  transition: color 0.15s ease;
 }
 
+/* EX-112 : un lien adopte la couleur de survol (texte, pas de fond) */
 .toolbar__link:hover {
-  background: var(--color-pill-bg-hover);
+  color: var(--color-hover-text);
 }
 
 .toolbar__search {
   padding: 0.4rem 0.9rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
+  background: var(--color-bg);
+  color: var(--color-text);
   font: inherit;
   font-size: 0.9rem;
   min-width: 16rem;
+  transition: border-color 0.15s ease;
+}
+
+.toolbar__search:hover {
+  border-color: var(--color-hover);
 }
 
 .toolbar__search:focus {
@@ -96,36 +193,32 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-pill-bg);
-  color: #333;
+  color: var(--color-text);
   font: inherit;
   font-size: 0.9rem;
   text-decoration: none;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
+/* EX-112 : un bouton (quelle que soit sa variante) adopte la couleur de
+   survol — juste le contour, pas le fond ; spécificité
+   (.btn:hover:not(:disabled)) supérieure à .btn--primary/.btn--danger, qui
+   l'emporte donc sur leur propre border-color */
 .btn:hover:not(:disabled) {
-  background: var(--color-pill-bg-hover);
+  border-color: var(--color-hover);
 }
 
 .btn--primary {
   border-color: transparent;
-  background: var(--color-primary);
-  color: #fff;
-}
-
-.btn--primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
+  background: var(--color-primary-fill);
+  color: var(--color-on-primary-fill);
 }
 
 .btn--danger {
   border-color: transparent;
   background: var(--color-error);
   color: #fff;
-}
-
-.btn--danger:hover:not(:disabled) {
-  background: #991b1b;
 }
 
 .btn:disabled {

@@ -70,10 +70,15 @@ defineProps<{
 .item-detail__null,
 .item-detail__empty-string {
   font-style: italic;
-  opacity: 0.6;
+  color: var(--color-text-muted);
 }
 
 .item-detail__broken-fk {
-  color: var(--color-error);
+  color: var(--color-error-text);
+}
+
+/* EX-112 : un lien adopte la couleur de survol */
+.item-detail dd a:hover {
+  color: var(--color-hover-text);
 }
 </style>
