@@ -1,13 +1,15 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-25 (Phase 6).
+Dernière mise à jour : 2026-07-25 (Phases 8-10 planifiées).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
-1. Architecture générale (EX-101 à EX-106)
+1. Architecture générale (EX-101 à EX-119)
 2. Bases de données (EX-201 à EX-208)
-3. Modèles (EX-301 à EX-305)
-4. Items (EX-401 à EX-424)
+3. Modèles (EX-301 à EX-309)
+4. Items (EX-401 à EX-431)
+
+Les exigences EX-107 à EX-119 (module 1), EX-306 à EX-309 (module 3) et EX-425 à EX-431 (module 4) ont été ajoutées aux SFD après la clôture de la Phase 6 et ne sont pas encore développées — cf. Phases 8-10 ci-dessous, qui en proposent le séquencement et l'implémentation.
 
 ## Architecture technique retenue
 
@@ -30,6 +32,9 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 | 4d    | Items — fidélité Eloquent     | ✅ fait    |
 | 5     | Ergonomie front (modules 3-4) | ✅ fait    |
 | 6     | Exposition du front           | ✅ fait    |
+| 8     | Internationalisation FR/EN    | ⬜ à faire |
+| 9     | Identité visuelle             | ⬜ à faire |
+| 10    | Relations entre modèles       | ⬜ à faire |
 | 7     | Points ouverts / backlog      | ⬜ à faire |
 
 ---
@@ -187,6 +192,47 @@ Le module 1 (Architecture générale) couvre aussi l'exposition et le routage du
 - [x] `Http\Controllers\SpaController` sert le seul point d'entrée (`index.html` publié) sur la route catch-all `{prefix}/app/{any?}` — le routage interne (Vue Router, historique HTML5) prend le relais côté navigateur pour tout sous-chemin ; erreur explicite (500, message `vendor:publish --tag=modelbase-assets`) si les assets n'ont jamais été publiés, plutôt qu'une page blanche silencieuse
 - Tests Feature : `tests/Feature/FrontRoutingTest.php` (401 sans redirection si non authentifié, shell SPA servi si authentifié, tout sous-chemin résout vers le même shell, erreur explicite si assets non publiés, segments `app`/`api` distincts)
 - **Vérifié manuellement contre l'environnement `docker-compose` réel** (pas seulement en tests Feature avec assets simulés) : `php artisan vendor:publish --tag=modelbase-assets --force` dans le conteneur `app`, puis authentification via `/dev-login` et requêtes `curl` réelles sur `http://localhost:8000/modelbase/app` — 401 sans authentification, 200 avec le shell SPA une fois authentifié (`window.__NUXT__.config` reflète bien `baseURL: "/modelbase/app/"` et `apiBase: "/modelbase/api"`, les URLs d'assets sont correctement préfixées), un sous-chemin profond (`/modelbase/app/connections/mysql`) résout au même shell, et `/modelbase/api/connections` reste joignable sous son propre segment. Non vérifié visuellement dans un navigateur réel (`chromium-cli` indisponible dans cet environnement) : le shell HTML et sa configuration d'amorçage sont corrects, et le bundle Vue compilé est inchangé par rapport à celui déjà validé visuellement sur le conteneur `frontend` (port 3000, Phases 3-5) — seuls le mode de build (SPA statique) et le chemin de base changent.
+
+## Phase 8 — Internationalisation FR/EN (module 1, EX-114 à EX-119)
+
+**Proposition CTO, non encore développée.** Ordre retenu : avant les Phases 9-10 pour que tout texte d'IHM introduit ensuite (identité visuelle n'en ajoute pas, mais les tableaux de relations de la Phase 10 en ajoutent) soit rédigé directement sous forme de clé traduisible plutôt que d'être rétrofité une seconde fois. Le rétrofit du texte déjà existant (Breadcrumb, listings, formulaire, toasts) est de toute façon incompressible, quel que soit l'ordre choisi.
+
+- [ ] Dépendance `@nuxtjs/i18n` (convention Nuxt standard plutôt qu'un composable maison, cohérent avec le choix déjà fait d'un stack outillé plutôt que réinventé) — locales `fr`/`en`, chargement paresseux des fichiers de traduction
+- [ ] **Détection de langue navigateur désactivée** (`detectBrowserLanguage: false`) — EX-115 impose le français au premier accès *indépendamment* de la langue du navigateur, à l'inverse du comportement par défaut du module
+- [ ] Persistance du choix manuel en `localStorage` (EX-117), relu à l'amorçage avant tout rendu pour éviter un flash FR→EN
+- [ ] `fallbackLocale: 'fr'` (EX-119) — un texte non traduit en `en` retombe en français, jamais une clé brute ni une chaîne vide
+- [ ] Sélecteur de langue (EX-116) — aucun emplacement de navigation persistant n'existe actuellement (chaque page a son propre fil d'Ariane, `frontend/components/Breadcrumb.vue`) ; introduire un en-tête global minimal dans `app.vue` pour l'héberger, plutôt que de le dupliquer sur chaque page
+- [ ] Extraction des chaînes FR actuellement codées en dur dans tous les composants existants (`Breadcrumb`, `ConnectionList`, `ModelList`, `ItemList`, `ItemDetail`, `ItemForm`, `ItemPicker`, `Toast`, pagination) vers les fichiers de locale
+- [ ] **Périmètre explicitement exclu** (EX-118, à documenter en commentaire à l'endroit pertinent plutôt qu'en dur dans chaque composant) : noms de modèles/colonnes, valeurs d'items, messages d'erreur bruts de la base (`DatabaseErrorTranslator`, EX-417/EX-420) ne passent jamais par i18n
+
+Point d'attention à trancher avant de démarrer : `frontend/` n'a aujourd'hui aucun harnais de test (pas de `devDependencies`, pas de script `test` dans `package.json`) — cohérent avec le reste du front, vérifié jusqu'ici manuellement (Phases 3, 5, 6). Pas de test automatisé proposé pour cette phase ; vérification manuelle du changement de langue, de la persistance après rechargement, et du repli FR sur une clé volontairement absente du fichier `en`.
+
+## Phase 9 — Identité visuelle (module 1, EX-107 à EX-113)
+
+**Proposition CTO, non encore développée.** Indépendante des Phases 8/10 (aucun texte, aucune donnée), peut être développée dans n'importe quel ordre — placée ici pour dérouler les phases front par coût croissant.
+
+- [ ] Remplacement des tokens actuels de `frontend/assets/css/main.css` (`--color-primary: #2563eb`, etc., hérités du gabarit initial) par les rôles `ColorRole` du diagramme SFD, exposés en custom properties CSS : `--color-text`, `--color-bg`, `--color-primary` (#1c9a97, fixe dans les deux modes, EX-110), `--color-accent-1`/`--color-accent-2` (#4e4feb/#77f2a1, EX-111), `--color-hover` (#fc9b50, fixe, EX-112)
+- [ ] Mode clair/sombre exclusivement via `@media (prefers-color-scheme: dark)` (EX-108) — **aucun sélecteur manuel** à construire dans l'IHM, à la différence du sélecteur de langue de la Phase 8 ; texte/fond inversés entre modes (EX-109 : `#2c3c4c`/`#ecf8f9` clair, inversé en sombre)
+- [ ] **Décision à documenter avant implémentation** (EX-113 + limite SFD) : les variantes sombres de principale/accent 1/accent 2/survol ne sont pas fournies et doivent être dérivées automatiquement sous la seule contrainte de contraste AA (ratio ≥ 4,5:1), sans validation designer — proposition : ajustement de la luminosité (HSL) de la valeur mode clair jusqu'à satisfaire le ratio de contraste WCAG contre le fond sombre `#2c3c4c`, calculé une fois (petit script Node jetable, pas une dépendance de runtime) et figé en valeur statique dans le CSS plutôt que recalculé à l'exécution
+- [ ] Audit de contraste de toutes les paires texte/fond actuellement utilisées (y compris `--color-error`, `--color-text-muted`, badges NULL/chaîne vide de `ItemDetail.vue`) contre le nouveau fond clair `#ecf8f9` et sombre `#2c3c4c`, pas seulement les 6 rôles nommés par la SFD
+- [ ] Application du survol (`:hover`) sur les éléments interactifs concernés par EX-112 (`.btn`, `.toolbar__link`, lignes `.data-table tbody tr`) — remplace la logique actuelle de survol par variation de fond neutre
+
+Point d'attention : comme pour la Phase 8, pas de harnais de test front — vérification par une capture d'écran manuelle en mode clair et sombre (bascule via les devtools navigateur, `prefers-color-scheme`) plutôt qu'un test automatisé, cohérent avec les vérifications manuelles déjà pratiquées pour les changements purement visuels (Phase 5).
+
+## Phase 10 — Relations entre modèles (module 3 EX-306 à EX-309, module 4 EX-425 à EX-431)
+
+**Proposition CTO, non encore développée.** Placée en dernier : c'est la phase la plus lourde côté backend (nouvelle introspection) et elle bénéficie d'un socle front stable (i18n, palette) pour ne pas re-traduire/re-styler deux fois les nouveaux composants qu'elle introduit. Les deux exigences SFD (module 3 : diagramme Mermaid ; module 4 : tableaux d'objets liés) partagent le même besoin — découvrir les relations Eloquent déclarées par le modèle hôte — d'où un traitement conjoint plutôt que deux phases séparées qui dupliqueraient l'introspection.
+
+- [ ] `Support\RelationIntrospector` (nouveau, à côté de `ColumnIntrospector`) — étend le mécanisme de réflexion déjà construit pour EX-423 (`ColumnIntrospector::relationForeignKeys`, réflexion des méthodes publiques sans paramètre requis, invocation protégée par le denylist `Model::class` + `SoftDeletes` déjà en place) aux types `HasMany`, `BelongsToMany`, `MorphMany`, `HasManyThrough`, `HasOne`, `MorphOne` (EX-307) — même garde-fou de sécurité, pas de nouveau risque introduit
+- [ ] Endpoint `GET /connections/{c}/models/{m}/relations` — nom de relation (= nom de la méthode, EX-426), type, multiplicité, modèle/connexion cible, navigabilité (même notion qu'EX-410 pour une FK simple : modèle cible non déclaré ou connexion indisponible ⇒ `navigable: false`, EX-308/limite SFD) — source unique consommée à la fois par le diagramme (module 3) et par les tableaux d'objets liés (module 4), pour ne pas dupliquer la logique de résolution
+- [ ] Endpoint `GET /connections/{c}/models/{m}/items/{id}/relations/{relation}` — listing paginé des objets liés d'une relation donnée (EX-429), réutilisant `ItemRepository::columnsFor()`/la logique de pagination déjà écrite pour le listing standard (EX-401/EX-403) mais appliquée au query builder de la relation plutôt qu'à celui du modèle de base — aperçu par colonnes « principales » selon la même logique qu'EX-402 (EX-427 ; point ouvert Phase 7 : la décision qui y sera prise s'applique aussi ici, une seule fois)
+- [ ] Front module 3 : nouveau composant `RelationDiagram.vue`, accessible depuis la page listing des items (EX-306) — génère une chaîne Mermaid `classDiagram` à partir de `/relations`, limitée au modèle courant et aux modèles directement liés sans remonter leurs propres relations (EX-308), affichant type + multiplicité sans colonnes (EX-309) ; message explicite si aucune relation déclarée (limite SFD) et indication d'indisponibilité (sans être omis) pour un modèle cible non résolu (limite SFD)
+- [ ] Front module 4 : extension d'`ItemDetail.vue` — un tableau paginé par relation sous les valeurs de colonnes (EX-425), titré par le nom de méthode Eloquent (EX-426), ligne cliquable naviguant vers la fiche détail de l'item lié dans son propre modèle (EX-428), message dédié si vide (EX-430), indication d'indisponibilité sans lien si connexion cible indisponible (EX-431) — réutilise `ItemPagination.vue` existant
+- [ ] **Hors périmètre, à documenter en limite plutôt qu'à développer** : attributs de table pivot d'une `belongsToMany` non affichés (EX-425/limite), pas de création/suppression rapide depuis ces tableaux (limite) — cohérent avec l'absence de mutation en masse déjà actée Phase 7
+- Tests Unit : `RelationIntrospectorTest` (détection de chaque type de relation, sécurité de la réflexion réutilisée d'EX-423, relation ciblant un modèle non déclaré/connexion indisponible)
+- Tests Feature : `RelationListingTest` (endpoint `/relations`), `ItemRelationsTest` (listing paginé d'objets liés, relation vide, connexion cible indisponible, navigation vers l'item lié)
+
+Point d'attention : contrairement aux Phases 8/9, cette phase touche le backend (introspection, endpoints) et suit donc les conventions habituelles du projet (migrations avant models avant controllers — sans objet ici, pas de nouvelle table — Feature test par endpoint, Unit test par fonction non triviale, cf. CLAUDE.md), à la différence des deux phases précédentes qui sont purement front et non testables automatiquement dans cet environnement.
 
 ## Phase 7 — Points ouverts / backlog
 
