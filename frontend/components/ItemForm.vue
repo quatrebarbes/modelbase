@@ -7,7 +7,14 @@ type ColumnSchema = {
   column: string
   type: 'string' | 'number' | 'boolean' | 'date' | 'json' | 'foreign_key'
   technical: boolean
+  fillable: boolean
   foreign_key?: { table: string; model: string | null }
+}
+
+// EX-421 : une colonne non fillable côté modèle hôte, hors colonne technique
+// (déjà couverte par EX-416), est traitée en lecture seule au même titre.
+function isReadOnly(column: ColumnSchema): boolean {
+  return column.technical || !column.fillable
 }
 
 const props = withDefaults(defineProps<{
@@ -70,12 +77,14 @@ function handleSubmit(): void {
         {{ column.column }}
         <!-- EX-416 : colonnes techniques affichées mais non modifiables -->
         <span v-if="column.technical" class="item-form__technical">(technique, lecture seule)</span>
+        <!-- EX-421 : colonne non fillable côté modèle hôte, non modifiable au même titre -->
+        <span v-else-if="!column.fillable" class="item-form__technical">(non modifiable)</span>
       </label>
 
       <div class="item-form__control">
         <!-- EX-415 : sélecteur d'item existant pour une colonne FK -->
         <ItemPicker
-          v-if="column.type === 'foreign_key' && column.foreign_key?.model && !column.technical"
+          v-if="column.type === 'foreign_key' && column.foreign_key?.model && !isReadOnly(column)"
           v-model="values[column.column]"
           :connection="connection"
           :model="column.foreign_key.model"
@@ -88,7 +97,7 @@ function handleSubmit(): void {
           type="checkbox"
           class="item-form__checkbox"
           :checked="Boolean(values[column.column])"
-          :disabled="column.technical || disabled"
+          :disabled="isReadOnly(column) || disabled"
           @change="values[column.column] = ($event.target as HTMLInputElement).checked"
         >
 
@@ -98,7 +107,7 @@ function handleSubmit(): void {
           type="number"
           step="any"
           :value="values[column.column] ?? ''"
-          :disabled="column.technical || disabled"
+          :disabled="isReadOnly(column) || disabled"
           @input="values[column.column] = ($event.target as HTMLInputElement).value"
         >
 
@@ -107,7 +116,7 @@ function handleSubmit(): void {
           :id="`field-${column.column}`"
           type="datetime-local"
           :value="values[column.column] ?? ''"
-          :disabled="column.technical || disabled"
+          :disabled="isReadOnly(column) || disabled"
           @input="values[column.column] = ($event.target as HTMLInputElement).value"
         >
 
@@ -115,7 +124,7 @@ function handleSubmit(): void {
           v-else-if="column.type === 'json'"
           :id="`field-${column.column}`"
           :value="jsonDrafts[column.column]"
-          :disabled="column.technical || disabled"
+          :disabled="isReadOnly(column) || disabled"
           rows="4"
           @input="updateJsonDraft(column.column, ($event.target as HTMLTextAreaElement).value)"
         />
@@ -125,7 +134,7 @@ function handleSubmit(): void {
           :id="`field-${column.column}`"
           type="text"
           :value="values[column.column] ?? ''"
-          :disabled="column.technical || disabled"
+          :disabled="isReadOnly(column) || disabled"
           @input="values[column.column] = ($event.target as HTMLInputElement).value"
         >
 

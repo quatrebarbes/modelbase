@@ -77,9 +77,9 @@ class ItemListingTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $this->putModel('Category', 'categories');
-        $this->putModel('Product', 'products');
-        $this->putModel('Blank', 'empties');
+        $this->putModel('ListingCategory', 'categories', ['name']);
+        $this->putModel('ListingProduct', 'products', ['category_id', 'name', 'price', 'metadata']);
+        $this->putModel('ListingBlank', 'empties', ['name']);
     }
 
     protected function tearDown(): void
@@ -93,9 +93,13 @@ class ItemListingTest extends TestCase
         parent::tearDown();
     }
 
-    private function putModel(string $class, string $table): void
+    /**
+     * @param  array<int, string>  $fillable
+     */
+    private function putModel(string $class, string $table, array $fillable): void
     {
         $namespace = app()->getNamespace();
+        $fillableList = collect($fillable)->map(fn (string $column) => "'{$column}'")->implode(', ');
 
         File::put(app_path("Models/{$class}.php"), <<<PHP
         <?php
@@ -109,6 +113,8 @@ class ItemListingTest extends TestCase
             protected \$connection = 'primary';
 
             protected \$table = '{$table}';
+
+            protected \$fillable = [{$fillableList}];
         }
         PHP);
 
@@ -138,14 +144,14 @@ class ItemListingTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->getJson($this->indexUrl('Product', ['per_page' => 1, 'page' => 1]));
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', ['per_page' => 1, 'page' => 1]));
 
         $response->assertOk();
         $response->assertJsonCount(1, 'data');
         $response->assertJsonPath('meta.total', 2);
         $response->assertJsonPath('meta.last_page', 2);
 
-        $response = $this->actingAs($user)->getJson($this->indexUrl('Product', ['per_page' => 1, 'page' => 2]));
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', ['per_page' => 1, 'page' => 2]));
         $response->assertJsonPath('meta.current_page', 2);
     }
 
@@ -153,7 +159,7 @@ class ItemListingTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->getJson($this->indexUrl('Blank'));
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingBlank'));
 
         $response->assertOk();
         $response->assertJson(['data' => []]);
@@ -172,7 +178,7 @@ class ItemListingTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->getJson($this->showUrl('Product', '1'));
+        $response = $this->actingAs($user)->getJson($this->showUrl('ListingProduct', '1'));
 
         $response->assertOk();
         $values = collect($response->json('data.values'))->keyBy('column');
@@ -186,13 +192,13 @@ class ItemListingTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->getJson($this->showUrl('Product', '1'));
+        $response = $this->actingAs($user)->getJson($this->showUrl('ListingProduct', '1'));
 
         $values = collect($response->json('data.values'))->keyBy('column');
 
         $this->assertSame([
             'table' => 'categories',
-            'model' => 'Category',
+            'model' => 'ListingCategory',
             'navigable' => true,
         ], $values['category_id']['foreign_key']);
     }
@@ -201,7 +207,7 @@ class ItemListingTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->getJson($this->showUrl('Product', '2'));
+        $response = $this->actingAs($user)->getJson($this->showUrl('ListingProduct', '2'));
 
         $values = collect($response->json('data.values'))->keyBy('column');
 
@@ -212,7 +218,7 @@ class ItemListingTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->getJson($this->showUrl('Product', '2'));
+        $response = $this->actingAs($user)->getJson($this->showUrl('ListingProduct', '2'));
 
         $values = collect($response->json('data.values'))->keyBy('column');
 
@@ -224,7 +230,7 @@ class ItemListingTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->getJson($this->showUrl('Product', '999'));
+        $response = $this->actingAs($user)->getJson($this->showUrl('ListingProduct', '999'));
 
         $response->assertStatus(404);
     }

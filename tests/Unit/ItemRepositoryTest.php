@@ -11,6 +11,7 @@ use Quatrebarbes\Modelbase\Support\ModelResolver;
 use Quatrebarbes\Modelbase\Tests\TestCase;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 
@@ -42,17 +43,33 @@ class ItemRepositoryTest extends TestCase
             $table->foreignId('category_id')->nullable()->constrained('categories');
             $table->string('name')->unique();
             $table->string('description')->nullable();
+            // Colonne volontairement absente de $fillable (cf. putModel()
+            // ci-dessous) pour vérifier EX-421 : une colonne non fillable,
+            // hors colonnes techniques (EX-416), est traitée en lecture seule.
+            // Déclarée dans $casts (sans effet sur son comportement, un cast
+            // 'string' sur une colonne déjà string) uniquement pour rester
+            // exposée au sens d'EX-422 (colonnes lues depuis le code hôte) :
+            // sans ce cast, columnsFor() l'exclurait purement et simplement
+            // du listing/de la fiche détail, empêchant de vérifier EX-421.
+            $table->string('internal_note')->nullable();
+            // Volontairement sans contrainte FK réelle en base (pas de
+            // constrained()), contrairement à category_id ci-dessus : sert à
+            // vérifier EX-423 (une relation Eloquent belongsTo déclarée sur
+            // le modèle hôte doit être détectée comme clé étrangère même en
+            // l'absence de toute contrainte au niveau de la base).
+            $table->unsignedBigInteger('secondary_category_id')->nullable();
         });
 
         DB::connection('primary')->table('categories')->insert(['id' => 1, 'name' => 'Tools']);
 
         DB::connection('primary')->table('products')->insert([
-            ['category_id' => 1, 'name' => 'Hammer', 'description' => null],
-            ['category_id' => 99, 'name' => 'Orphan', 'description' => ''],
+            ['category_id' => 1, 'name' => 'Hammer', 'description' => null, 'internal_note' => null, 'secondary_category_id' => null],
+            ['category_id' => 99, 'name' => 'Orphan', 'description' => '', 'internal_note' => null, 'secondary_category_id' => null],
         ]);
 
-        $this->putModel('Category', 'categories');
-        $this->putModel('Product', 'products');
+        $this->putModel('RepoCategory', 'categories', ['name']);
+        $this->putModel('RepoProduct', 'products', ['category_id', 'name', 'description'], ['internal_note' => 'string']);
+        $this->putProductWithRelation();
     }
 
     protected function tearDown(): void
@@ -62,9 +79,15 @@ class ItemRepositoryTest extends TestCase
         parent::tearDown();
     }
 
-    private function putModel(string $class, string $table): void
+    /**
+     * @param  array<int, string>  $fillable
+     * @param  array<string, string>  $casts
+     */
+    private function putModel(string $class, string $table, array $fillable, array $casts = []): void
     {
         $namespace = app()->getNamespace();
+        $fillableList = collect($fillable)->map(fn (string $column) => "'{$column}'")->implode(', ');
+        $castsList = collect($casts)->map(fn (string $cast, string $column) => "'{$column}' => '{$cast}'")->implode(', ');
 
         File::put(app_path("Models/{$class}.php"), <<<PHP
         <?php
@@ -78,10 +101,56 @@ class ItemRepositoryTest extends TestCase
             protected \$connection = 'primary';
 
             protected \$table = '{$table}';
+
+            protected \$fillable = [{$fillableList}];
+
+            protected \$casts = [{$castsList}];
         }
         PHP);
 
         require_once app_path("Models/{$class}.php");
+    }
+
+    /**
+     * EX-423 : modèle dédié déclarant une relation `belongsTo` sur
+     * `secondary_category_id`, une colonne volontairement sans contrainte FK
+     * réelle en base (cf. setUp()) — la classe doit être distincte de
+     * `RepoProduct` (nom de classe unique à l'échelle de la suite, cf.
+     * docs/roadmap.md Phase 3, « Collision de classes PHP »).
+     */
+    private function putProductWithRelation(): void
+    {
+        $namespace = app()->getNamespace();
+
+        File::put(app_path('Models/RepoProductWithRelation.php'), <<<PHP
+        <?php
+
+        namespace {$namespace}Models;
+
+        use Illuminate\Database\Eloquent\Model;
+        use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+        class RepoProductWithRelation extends Model
+        {
+            protected \$connection = 'primary';
+
+            protected \$table = 'products';
+
+            protected \$fillable = ['category_id', 'name', 'description', 'secondary_category_id'];
+
+            public function secondaryCategory(): BelongsTo
+            {
+                return \$this->belongsTo(RepoCategory::class, 'secondary_category_id');
+            }
+        }
+        PHP);
+
+        require_once app_path('Models/RepoProductWithRelation.php');
+    }
+
+    private function productClass(): string
+    {
+        return app()->getNamespace().'Models\\RepoProduct';
     }
 
     private function repository(): ItemRepository
@@ -93,7 +162,7 @@ class ItemRepositoryTest extends TestCase
 
     public function test_it_paginates_items_of_a_model(): void
     {
-        $page = $this->repository()->paginate('primary', 'Product', 1, 1);
+        $page = $this->repository()->paginate('primary', 'RepoProduct', 1, 1);
 
         $this->assertCount(1, $page['data']);
         $this->assertSame(2, $page['meta']['total']);
@@ -105,7 +174,7 @@ class ItemRepositoryTest extends TestCase
     {
         DB::connection('primary')->table('products')->delete();
 
-        $page = $this->repository()->paginate('primary', 'Product', 1, 15);
+        $page = $this->repository()->paginate('primary', 'RepoProduct', 1, 15);
 
         $this->assertSame([], $page['data']);
         $this->assertSame(0, $page['meta']['total']);
@@ -113,26 +182,26 @@ class ItemRepositoryTest extends TestCase
 
     public function test_find_returns_null_for_an_unknown_item(): void
     {
-        $this->assertNull($this->repository()->find('primary', 'Product', '404'));
+        $this->assertNull($this->repository()->find('primary', 'RepoProduct', '404'));
     }
 
     public function test_find_decorates_a_valid_foreign_key_as_navigable(): void
     {
-        $item = $this->repository()->find('primary', 'Product', '1');
+        $item = $this->repository()->find('primary', 'RepoProduct', '1');
 
         $values = collect($item['values'])->keyBy('column');
 
         $this->assertSame('foreign_key', $values['category_id']['type']);
         $this->assertSame([
             'table' => 'categories',
-            'model' => 'Category',
+            'model' => 'RepoCategory',
             'navigable' => true,
         ], $values['category_id']['foreign_key']);
     }
 
     public function test_find_flags_a_broken_foreign_key_as_not_navigable(): void
     {
-        $item = $this->repository()->find('primary', 'Product', '2');
+        $item = $this->repository()->find('primary', 'RepoProduct', '2');
 
         $values = collect($item['values'])->keyBy('column');
 
@@ -141,13 +210,13 @@ class ItemRepositoryTest extends TestCase
 
     public function test_find_distinguishes_null_from_empty_string(): void
     {
-        $item = $this->repository()->find('primary', 'Product', '1');
+        $item = $this->repository()->find('primary', 'RepoProduct', '1');
         $values = collect($item['values'])->keyBy('column');
 
         $this->assertTrue($values['description']['is_null']);
         $this->assertNull($values['description']['value']);
 
-        $item = $this->repository()->find('primary', 'Product', '2');
+        $item = $this->repository()->find('primary', 'RepoProduct', '2');
         $values = collect($item['values'])->keyBy('column');
 
         $this->assertFalse($values['description']['is_null']);
@@ -156,17 +225,63 @@ class ItemRepositoryTest extends TestCase
 
     public function test_columns_flags_the_primary_key_as_technical_and_describes_foreign_keys(): void
     {
-        $columns = collect($this->repository()->columns('primary', 'Product'))->keyBy('column');
+        $columns = collect($this->repository()->columns('primary', 'RepoProduct'))->keyBy('column');
 
         $this->assertTrue($columns['id']['technical']);
         $this->assertFalse($columns['name']['technical']);
         $this->assertSame('foreign_key', $columns['category_id']['type']);
-        $this->assertSame('Category', $columns['category_id']['foreign_key']['model']);
+        $this->assertSame('RepoCategory', $columns['category_id']['foreign_key']['model']);
+    }
+
+    /**
+     * EX-421 : une colonne absente de $fillable côté modèle hôte (ici
+     * `internal_note`, cf. putModel()) est signalée comme non fillable, au
+     * même titre qu'une colonne technique pour le rendu en lecture seule.
+     */
+    public function test_columns_flags_a_non_fillable_column_as_not_fillable(): void
+    {
+        $columns = collect($this->repository()->columns('primary', 'RepoProduct'))->keyBy('column');
+
+        $this->assertFalse($columns['internal_note']['fillable']);
+        $this->assertTrue($columns['name']['fillable']);
+    }
+
+    /**
+     * EX-423 : `secondary_category_id` n'a aucune contrainte FK réelle en
+     * base (cf. setUp()), seulement une relation `belongsTo` déclarée sur
+     * `RepoProductWithRelation::secondaryCategory()` (cf.
+     * putProductWithRelation()) — doit malgré tout être détectée comme clé
+     * étrangère, la relation Eloquent du modèle hôte prévalant désormais sur
+     * la seule contrainte de la base.
+     */
+    public function test_columns_detects_a_foreign_key_from_an_eloquent_relation_without_a_database_constraint(): void
+    {
+        $columns = collect($this->repository()->columns('primary', 'RepoProductWithRelation'))->keyBy('column');
+
+        $this->assertSame('foreign_key', $columns['secondary_category_id']['type']);
+        $this->assertSame('categories', $columns['secondary_category_id']['foreign_key']['table']);
+    }
+
+    /**
+     * EX-422 : une colonne réelle de la table qui n'est ni fillable, ni
+     * castée, ni technique, ni détectée comme clé étrangère disparaît
+     * entièrement du schéma exposé — ici `internal_note` pour
+     * `RepoProductWithRelation`, dont le $fillable (cf.
+     * putProductWithRelation()) ne la couvre pas et qui, contrairement à
+     * `RepoProduct` (cf. test_columns_flags_a_non_fillable_column_as_not_fillable
+     * ci-dessus), ne déclare aucun cast dessus non plus : elle est donc
+     * absente plutôt que simplement en lecture seule.
+     */
+    public function test_columns_omits_a_column_unknown_to_the_host_models_code(): void
+    {
+        $columns = collect($this->repository()->columns('primary', 'RepoProductWithRelation'))->keyBy('column');
+
+        $this->assertArrayNotHasKey('internal_note', $columns);
     }
 
     public function test_create_inserts_a_new_item_with_the_submitted_values(): void
     {
-        $item = $this->repository()->create('primary', 'Product', [
+        $item = $this->repository()->create('primary', 'RepoProduct', [
             'category_id' => 1,
             'name' => 'Wrench',
             'description' => 'A tool',
@@ -180,7 +295,7 @@ class ItemRepositoryTest extends TestCase
 
     public function test_create_ignores_a_submitted_primary_key(): void
     {
-        $item = $this->repository()->create('primary', 'Product', [
+        $item = $this->repository()->create('primary', 'RepoProduct', [
             'id' => 999,
             'category_id' => 1,
             'name' => 'Wrench',
@@ -194,7 +309,7 @@ class ItemRepositoryTest extends TestCase
         $this->expectException(ItemValidationException::class);
 
         try {
-            $this->repository()->create('primary', 'Product', ['category_id' => 1]);
+            $this->repository()->create('primary', 'RepoProduct', ['category_id' => 1]);
         } catch (ItemValidationException $exception) {
             $this->assertArrayHasKey('name', $exception->errors());
 
@@ -207,7 +322,7 @@ class ItemRepositoryTest extends TestCase
         $this->expectException(ItemValidationException::class);
 
         try {
-            $this->repository()->create('primary', 'Product', ['category_id' => 1, 'name' => 'Hammer']);
+            $this->repository()->create('primary', 'RepoProduct', ['category_id' => 1, 'name' => 'Hammer']);
         } catch (ItemValidationException $exception) {
             $this->assertArrayHasKey('name', $exception->errors());
 
@@ -217,7 +332,7 @@ class ItemRepositoryTest extends TestCase
 
     public function test_update_modifies_the_values_of_an_existing_item(): void
     {
-        $item = $this->repository()->update('primary', 'Product', '1', ['description' => 'Updated']);
+        $item = $this->repository()->update('primary', 'RepoProduct', '1', ['description' => 'Updated']);
 
         $values = collect($item['values'])->keyBy('column');
         $this->assertSame('Updated', $values['description']['value']);
@@ -225,13 +340,72 @@ class ItemRepositoryTest extends TestCase
 
     public function test_update_returns_null_for_an_unknown_item(): void
     {
-        $this->assertNull($this->repository()->update('primary', 'Product', '404', ['description' => 'x']));
+        $this->assertNull($this->repository()->update('primary', 'RepoProduct', '404', ['description' => 'x']));
     }
 
     public function test_update_ignores_a_submitted_primary_key(): void
     {
-        $item = $this->repository()->update('primary', 'Product', '1', ['id' => 555, 'description' => 'Updated']);
+        $item = $this->repository()->update('primary', 'RepoProduct', '1', ['id' => 555, 'description' => 'Updated']);
 
         $this->assertSame(1, $item['id']);
+    }
+
+    /**
+     * EX-421 : `internal_note` n'est pas dans $fillable (cf. putModel()) —
+     * traitée en lecture seule au même titre qu'une colonne technique.
+     */
+    public function test_create_ignores_a_submitted_non_fillable_column(): void
+    {
+        $item = $this->repository()->create('primary', 'RepoProduct', [
+            'category_id' => 1,
+            'name' => 'Wrench',
+            'internal_note' => 'should not be saved',
+        ]);
+
+        $values = collect($item['values'])->keyBy('column');
+        $this->assertTrue($values['internal_note']['is_null']);
+    }
+
+    public function test_update_ignores_a_submitted_non_fillable_column(): void
+    {
+        $item = $this->repository()->update('primary', 'RepoProduct', '1', ['internal_note' => 'should not be saved']);
+
+        $values = collect($item['values'])->keyBy('column');
+        $this->assertTrue($values['internal_note']['is_null']);
+    }
+
+    /**
+     * EX-107 : create() passe désormais par une instance Eloquent réelle
+     * (fill()+save()) plutôt que le query builder brut (Phase 4b), pour
+     * déclencher les événements du modèle hôte.
+     */
+    public function test_create_fires_the_host_models_creating_and_created_events(): void
+    {
+        Event::fake();
+
+        $this->repository()->create('primary', 'RepoProduct', ['category_id' => 1, 'name' => 'Screwdriver']);
+
+        Event::assertDispatched('eloquent.creating: '.$this->productClass());
+        Event::assertDispatched('eloquent.created: '.$this->productClass());
+    }
+
+    public function test_update_fires_the_host_models_updating_and_updated_events(): void
+    {
+        Event::fake();
+
+        $this->repository()->update('primary', 'RepoProduct', '1', ['description' => 'Updated']);
+
+        Event::assertDispatched('eloquent.updating: '.$this->productClass());
+        Event::assertDispatched('eloquent.updated: '.$this->productClass());
+    }
+
+    public function test_delete_fires_the_host_models_deleting_and_deleted_events(): void
+    {
+        Event::fake();
+
+        $this->repository()->delete('primary', 'RepoProduct', '1');
+
+        Event::assertDispatched('eloquent.deleting: '.$this->productClass());
+        Event::assertDispatched('eloquent.deleted: '.$this->productClass());
     }
 }

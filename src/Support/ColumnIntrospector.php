@@ -2,7 +2,12 @@
 
 namespace Quatrebarbes\Modelbase\Support;
 
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Schema;
+use ReflectionClass;
+use ReflectionMethod;
+use Throwable;
 
 /**
  * Introspecte les colonnes de la table d'un modèle (nom, type mappé vers
@@ -52,6 +57,82 @@ class ColumnIntrospector
         }
 
         return null;
+    }
+
+    /**
+     * EX-423 : détecte les clés étrangères déclarées via une relation
+     * Eloquent `belongsTo` du modèle hôte (méthode publique sans paramètre
+     * requis, invoquée pour inspecter l'objet Relation construit) — prend le
+     * pas sur la seule contrainte FK de la base ci-dessus : une relation
+     * déclarée sans contrainte FK réelle en base (cas courant, notamment
+     * sqlite ou app hôte n'imposant pas la contrainte) est ainsi détectée.
+     * Construire une BelongsTo n'exécute aucune requête (`addConstraints()`
+     * ne fait qu'ajouter une clause `where` au futur query builder), invoquer
+     * la méthode de relation est donc sans effet de bord — sous réserve de
+     * ne jamais invoquer une méthode qui, elle, en aurait un (cf. denylist).
+     *
+     * @return array<string, array{table: string, column: string}>
+     */
+    public function relationForeignKeys(Model $instance): array
+    {
+        $denylist = $this->methodDenylist();
+        $relations = [];
+
+        foreach ((new ReflectionClass($instance))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            if (
+                $method->isStatic()
+                || $method->getNumberOfRequiredParameters() > 0
+                || in_array($method->getName(), $denylist, true)
+            ) {
+                continue;
+            }
+
+            try {
+                $relation = $method->invoke($instance);
+            } catch (Throwable) {
+                continue;
+            }
+
+            if (! $relation instanceof BelongsTo) {
+                continue;
+            }
+
+            $relations[$relation->getForeignKeyName()] = [
+                'table' => $relation->getRelated()->getTable(),
+                'column' => $relation->getOwnerKeyName(),
+            ];
+        }
+
+        return $relations;
+    }
+
+    /**
+     * Méthodes publiques sans paramètre requis à ne jamais invoquer à
+     * l'aveugle lors de l'introspection : celles de `Model` lui-même
+     * (`save`/`delete`/`push`/`touch`/`refresh`/`fresh`/`replicate`/...,
+     * capturées d'un bloc via réflexion plutôt qu'énumérées à la main) plus
+     * quelques méthodes fournies par des traits courants mais absentes de
+     * `Model`, aux effets de bord réels si invoquées (`SoftDeletes`).
+     * Limite documentée : un trait tiers ajoutant sa propre méthode publique
+     * sans paramètre et à effet de bord (hors `SoftDeletes`) ne serait pas
+     * couvert par cette liste.
+     *
+     * @return array<int, string>
+     */
+    private function methodDenylist(): array
+    {
+        static $denylist = null;
+
+        if ($denylist === null) {
+            $denylist = array_map(
+                fn (ReflectionMethod $method) => $method->getName(),
+                (new ReflectionClass(Model::class))->getMethods(ReflectionMethod::IS_PUBLIC)
+            );
+
+            $denylist = array_merge($denylist, ['restore', 'forceDelete', 'trashed', 'isForceDeleting']);
+        }
+
+        return $denylist;
     }
 
     /**

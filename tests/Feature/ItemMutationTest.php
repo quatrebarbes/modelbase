@@ -48,13 +48,22 @@ class ItemMutationTest extends TestCase
             $table->string('sku')->unique();
             $table->decimal('price');
             $table->json('metadata')->nullable();
+            // Colonne volontairement absente de $fillable (cf. putModel()
+            // ci-dessous) pour vérifier EX-421 : une colonne non fillable,
+            // hors colonnes techniques (EX-416), est traitée en lecture seule.
+            // Déclarée dans $casts (sans effet sur son comportement, un cast
+            // 'string' sur une colonne déjà string) uniquement pour rester
+            // exposée au sens d'EX-422 (colonnes lues depuis le code hôte) :
+            // sans ce cast, colonnesFor() l'exclurait purement et simplement
+            // du listing/de la fiche détail, empêchant de vérifier EX-421.
+            $table->string('internal_note')->nullable();
             $table->timestamps();
         });
 
         DB::connection('primary')->table('categories')->insert(['id' => 1, 'name' => 'Tools']);
 
-        $this->putModel('Category', 'categories');
-        $this->putModel('Product', 'products');
+        $this->putModel('MutationCategory', 'categories', ['name']);
+        $this->putModel('MutationProduct', 'products', ['category_id', 'name', 'sku', 'price', 'metadata'], ['internal_note' => 'string']);
     }
 
     protected function tearDown(): void
@@ -68,9 +77,15 @@ class ItemMutationTest extends TestCase
         parent::tearDown();
     }
 
-    private function putModel(string $class, string $table): void
+    /**
+     * @param  array<int, string>  $fillable
+     * @param  array<string, string>  $casts
+     */
+    private function putModel(string $class, string $table, array $fillable, array $casts = []): void
     {
         $namespace = app()->getNamespace();
+        $fillableList = collect($fillable)->map(fn (string $column) => "'{$column}'")->implode(', ');
+        $castsList = collect($casts)->map(fn (string $cast, string $column) => "'{$column}' => '{$cast}'")->implode(', ');
 
         File::put(app_path("Models/{$class}.php"), <<<PHP
         <?php
@@ -84,6 +99,10 @@ class ItemMutationTest extends TestCase
             protected \$connection = 'primary';
 
             protected \$table = '{$table}';
+
+            protected \$fillable = [{$fillableList}];
+
+            protected \$casts = [{$castsList}];
         }
         PHP);
 
@@ -119,7 +138,7 @@ class ItemMutationTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->postJson($this->storeUrl('Product'), array_merge([
+        $response = $this->actingAs($user)->postJson($this->storeUrl('MutationProduct'), array_merge([
             'category_id' => 1,
             'name' => 'Hammer',
             'sku' => 'SKU-1',
@@ -135,7 +154,7 @@ class ItemMutationTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->getJson($this->columnsUrl('Product'));
+        $response = $this->actingAs($user)->getJson($this->columnsUrl('MutationProduct'));
 
         $response->assertOk();
         $columns = collect($response->json('data'))->keyBy('column');
@@ -145,14 +164,30 @@ class ItemMutationTest extends TestCase
         $this->assertTrue($columns['updated_at']['technical']);
         $this->assertFalse($columns['name']['technical']);
         $this->assertSame('foreign_key', $columns['category_id']['type']);
-        $this->assertSame('Category', $columns['category_id']['foreign_key']['model']);
+        $this->assertSame('MutationCategory', $columns['category_id']['foreign_key']['model']);
+    }
+
+    /**
+     * EX-421 : `internal_note` n'est pas dans $fillable (cf. putModel()) —
+     * signalée comme non fillable, au même titre qu'une colonne technique
+     * pour le rendu en lecture seule côté front.
+     */
+    public function test_columns_flags_a_non_fillable_column_as_not_fillable(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->columnsUrl('MutationProduct'));
+        $columns = collect($response->json('data'))->keyBy('column');
+
+        $this->assertFalse($columns['internal_note']['fillable']);
+        $this->assertTrue($columns['name']['fillable']);
     }
 
     public function test_it_creates_an_item_with_the_submitted_values(): void
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->postJson($this->storeUrl('Product'), [
+        $response = $this->actingAs($user)->postJson($this->storeUrl('MutationProduct'), [
             'category_id' => 1,
             'name' => 'Hammer',
             'sku' => 'SKU-1',
@@ -172,7 +207,7 @@ class ItemMutationTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->postJson($this->storeUrl('Product'), [
+        $response = $this->actingAs($user)->postJson($this->storeUrl('MutationProduct'), [
             'id' => 999,
             'created_at' => '2000-01-01 00:00:00',
             'category_id' => 1,
@@ -188,11 +223,33 @@ class ItemMutationTest extends TestCase
         $this->assertNotSame('2000-01-01 00:00:00', $values['created_at']['value']);
     }
 
+    /**
+     * EX-421 : une colonne non fillable côté modèle hôte (ici `internal_note`,
+     * cf. putModel()) est ignorée à la création, comme une colonne technique.
+     */
+    public function test_it_ignores_a_submitted_non_fillable_column_on_create(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->postJson($this->storeUrl('MutationProduct'), [
+            'category_id' => 1,
+            'name' => 'Hammer',
+            'sku' => 'SKU-1',
+            'price' => 9.99,
+            'internal_note' => 'should not be saved',
+        ]);
+
+        $response->assertCreated();
+        $values = collect($response->json('data.values'))->keyBy('column');
+
+        $this->assertTrue($values['internal_note']['is_null']);
+    }
+
     public function test_create_returns_a_validation_error_for_a_missing_required_column(): void
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->postJson($this->storeUrl('Product'), [
+        $response = $this->actingAs($user)->postJson($this->storeUrl('MutationProduct'), [
             'category_id' => 1,
             'sku' => 'SKU-1',
             'price' => 9.99,
@@ -207,7 +264,7 @@ class ItemMutationTest extends TestCase
         $this->createProduct(['sku' => 'SKU-DUP']);
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->postJson($this->storeUrl('Product'), [
+        $response = $this->actingAs($user)->postJson($this->storeUrl('MutationProduct'), [
             'category_id' => 1,
             'name' => 'Another',
             'sku' => 'SKU-DUP',
@@ -223,7 +280,7 @@ class ItemMutationTest extends TestCase
         $id = $this->createProduct();
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->patchJson($this->updateUrl('Product', (string) $id), [
+        $response = $this->actingAs($user)->patchJson($this->updateUrl('MutationProduct', (string) $id), [
             'name' => 'Updated hammer',
         ]);
 
@@ -240,7 +297,7 @@ class ItemMutationTest extends TestCase
         $user = UserFactory::new()->create();
         $originalCreatedAt = DB::connection('primary')->table('products')->where('id', $id)->value('created_at');
 
-        $response = $this->actingAs($user)->patchJson($this->updateUrl('Product', (string) $id), [
+        $response = $this->actingAs($user)->patchJson($this->updateUrl('MutationProduct', (string) $id), [
             'id' => 555,
             'created_at' => '2000-01-01 00:00:00',
             'name' => 'Updated hammer',
@@ -253,11 +310,30 @@ class ItemMutationTest extends TestCase
         $this->assertSame($originalCreatedAt, $values['created_at']['value']);
     }
 
+    /**
+     * EX-421 : même principe que test_it_ignores_a_submitted_non_fillable_column_on_create()
+     * pour la modification.
+     */
+    public function test_it_ignores_a_submitted_non_fillable_column_on_update(): void
+    {
+        $id = $this->createProduct();
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->patchJson($this->updateUrl('MutationProduct', (string) $id), [
+            'internal_note' => 'should not be saved',
+        ]);
+
+        $response->assertOk();
+        $values = collect($response->json('data.values'))->keyBy('column');
+
+        $this->assertTrue($values['internal_note']['is_null']);
+    }
+
     public function test_it_returns_404_when_updating_an_unknown_item(): void
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->patchJson($this->updateUrl('Product', '999'), [
+        $response = $this->actingAs($user)->patchJson($this->updateUrl('MutationProduct', '999'), [
             'name' => 'Updated hammer',
         ]);
 
@@ -268,7 +344,7 @@ class ItemMutationTest extends TestCase
     {
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->postJson($this->storeUrl('Product'), [
+        $response = $this->actingAs($user)->postJson($this->storeUrl('MutationProduct'), [
             'category_id' => 1,
             'name' => 'Hammer',
             'sku' => 'SKU-1',
@@ -288,7 +364,7 @@ class ItemMutationTest extends TestCase
         $this->createProduct(['sku' => 'SKU-SECOND']);
         $user = UserFactory::new()->create();
 
-        $response = $this->actingAs($user)->patchJson($this->updateUrl('Product', (string) $firstId), [
+        $response = $this->actingAs($user)->patchJson($this->updateUrl('MutationProduct', (string) $firstId), [
             'sku' => 'SKU-SECOND',
         ]);
 

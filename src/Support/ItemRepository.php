@@ -8,11 +8,16 @@ use Illuminate\Database\QueryException;
 
 /**
  * Listing paginé (EX-401, EX-403), détail décoré par type de colonne (EX-405
- * à EX-410), schéma des colonnes (EX-412/EX-414/EX-415/EX-416) et écriture
- * (EX-412/EX-413/EX-417) des items d'un modèle. EX-402 (colonnes
- * « principales » du listing) est un point ouvert non tranché (cf.
- * docs/roadmap.md, Phase 5) : en attendant, le listing renvoie la valeur
- * brute de toutes les colonnes.
+ * à EX-410), schéma des colonnes (EX-412/EX-414/EX-415/EX-416/EX-421/EX-422/
+ * EX-423) et écriture (EX-412/EX-413/EX-417) des items d'un modèle. EX-402
+ * (colonnes « principales » du listing) est un point ouvert non tranché (cf.
+ * docs/roadmap.md, Phase 6) : en attendant, le listing renvoie la valeur
+ * brute de toutes les colonnes exposées (cf. `columnsFor()`, EX-422).
+ *
+ * Écriture (create/update/delete) via une instance Eloquent réelle du modèle
+ * hôte (fill()/save()/delete()) plutôt que le query builder brut utilisé
+ * jusqu'en Phase 4c, pour déclencher les événements du modèle hôte
+ * (creating/created, updating/updated, deleting/deleted — EX-424).
  */
 class ItemRepository
 {
@@ -66,18 +71,19 @@ class ItemRepository
 
         return [
             'id' => $row[$key],
-            'values' => collect($this->columns->forTable($connection, $table))
-                ->map(fn (array $column) => $this->decorate($db, $connection, $column, $row[$column['name']] ?? null, $technical))
+            'values' => collect($this->columnsFor($connection, $instance))
+                ->map(fn (array $column) => $this->decorate($db, $connection, $column, $row[$column['name']] ?? null, $technical, $instance))
                 ->values()
                 ->all(),
         ];
     }
 
     /**
-     * EX-412/EX-414/EX-415/EX-416 : schéma des colonnes d'un modèle (type,
-     * clé étrangère, caractère technique), sans valeur — utilisé par le
-     * formulaire front pour se construire indépendamment de l'existence d'un
-     * item (création, ou modèle encore vide, cf. EX-404).
+     * EX-412/EX-414/EX-415/EX-416/EX-421 : schéma des colonnes d'un modèle
+     * (type, clé étrangère, caractère technique, caractère fillable), sans
+     * valeur — utilisé par le formulaire front pour se construire
+     * indépendamment de l'existence d'un item (création, ou modèle encore
+     * vide, cf. EX-404).
      *
      * @return array<int, array<string, mixed>>
      */
@@ -87,20 +93,23 @@ class ItemRepository
         $instance = new $class;
         $technical = $this->technicalColumns($instance);
 
-        return collect($this->columns->forTable($connection, $instance->getTable()))
-            ->map(fn (array $column) => $this->describeColumn($connection, $column, $technical))
+        return collect($this->columnsFor($connection, $instance))
+            ->map(fn (array $column) => $this->describeColumn($connection, $column, $technical, $instance))
             ->values()
             ->all();
     }
 
     /**
-     * EX-412/EX-417 : crée un item à partir des valeurs soumises. Les
-     * colonnes techniques (EX-416) sont ignorées si elles sont soumises
-     * malgré tout — gérées ici (horodatages) ou pas du tout modifiables (clé
-     * primaire, auto-générée). Aucune validation propre au plug-in : les
-     * valeurs sont écrites telles quelles, la contrainte de la colonne étant
-     * appliquée par la BDD elle-même et sa violation éventuelle traduite par
-     * DatabaseErrorTranslator.
+     * EX-424/EX-412/EX-417/EX-421 : crée un item à partir des valeurs
+     * soumises, via une instance Eloquent réelle du modèle hôte
+     * (fill()+save()) pour déclencher creating/created. Les colonnes
+     * techniques (EX-416) et non fillable (EX-421) sont ignorées si elles
+     * sont soumises malgré tout — les horodatages restent gérés
+     * nativement par Eloquent (cf. disableTimestampsIfColumnsMissing()) ;
+     * seule la clé primaire n'est jamais modifiable. Aucune validation
+     * propre au plug-in : les valeurs sont écrites telles quelles, la
+     * contrainte de la colonne étant appliquée par la BDD elle-même et sa
+     * violation éventuelle traduite par DatabaseErrorTranslator.
      *
      * @param  array<string, mixed>  $values
      * @return array{id: mixed, values: array<int, array<string, mixed>>}
@@ -111,37 +120,29 @@ class ItemRepository
     {
         $class = $this->resolver->resolve($connection, $model);
         $instance = new $class;
-        $db = $instance->getConnection();
         $table = $instance->getTable();
-        $columnDefinitions = $this->columns->forTable($connection, $table);
+        $columnDefinitions = $this->columnsFor($connection, $instance);
         $known = collect($columnDefinitions)->pluck('name')->all();
 
-        $writable = $this->writable($values, $instance, $columnDefinitions);
-
-        // Un modèle Eloquent a `$timestamps` à `true` par défaut, sans lien
-        // garanti avec la présence réelle des colonnes created_at/updated_at
-        // dans la table (ex. modèle sans `$table->timestamps()` déclaré) —
-        // ne les renseigner que si elles existent réellement (cf. $known).
-        if ($instance->usesTimestamps() && in_array($instance->getCreatedAtColumn(), $known, true)) {
-            $now = $instance->freshTimestampString();
-            $writable[$instance->getCreatedAtColumn()] = $now;
-            $writable[$instance->getUpdatedAtColumn()] = $now;
-        }
+        $this->disableTimestampsIfColumnsMissing($instance, $known);
+        $instance->fill($this->writable($values, $instance, $columnDefinitions));
 
         try {
-            $id = $db->table($table)->insertGetId($writable, $instance->getKeyName());
+            $instance->save();
         } catch (QueryException $exception) {
-            throw $this->toValidationException($exception, $db, $table);
+            throw $this->toValidationException($exception, $instance->getConnection(), $table);
         }
 
-        return $this->find($connection, $model, (string) $id);
+        return $this->find($connection, $model, (string) $instance->getKey());
     }
 
     /**
-     * EX-413/EX-417 : modifie les valeurs d'un item existant, même principe
-     * que create() pour les colonnes techniques et l'absence de validation
-     * propre au plug-in. Renvoie `null` si l'item n'existe pas (cf.
-     * ItemController::update, qui traduit ce cas en 404).
+     * EX-424/EX-413/EX-417/EX-421 : modifie les valeurs d'un item existant,
+     * via l'instance Eloquent résolue (fill()+save()) pour déclencher
+     * updating/updated — même principe que create() pour les colonnes
+     * techniques/non fillable et l'absence de validation propre au plug-in.
+     * Renvoie `null` si l'item n'existe pas (cf. ItemController::update, qui
+     * traduit ce cas en 404).
      *
      * @param  array<string, mixed>  $values
      * @return array{id: mixed, values: array<int, array<string, mixed>>}|null
@@ -151,60 +152,53 @@ class ItemRepository
     public function update(string $connection, string $model, string $id, array $values): ?array
     {
         $class = $this->resolver->resolve($connection, $model);
-        $instance = new $class;
-        $db = $instance->getConnection();
-        $table = $instance->getTable();
-        $key = $instance->getKeyName();
+        $instance = $class::find($id);
 
-        if (! $db->table($table)->where($key, $id)->exists()) {
+        if ($instance === null) {
             return null;
         }
 
-        $columnDefinitions = $this->columns->forTable($connection, $table);
+        $table = $instance->getTable();
+        $columnDefinitions = $this->columnsFor($connection, $instance);
         $known = collect($columnDefinitions)->pluck('name')->all();
-        $writable = $this->writable($values, $instance, $columnDefinitions);
 
-        if ($instance->usesTimestamps() && in_array($instance->getUpdatedAtColumn(), $known, true)) {
-            $writable[$instance->getUpdatedAtColumn()] = $instance->freshTimestampString();
-        }
+        $this->disableTimestampsIfColumnsMissing($instance, $known);
+        $instance->fill($this->writable($values, $instance, $columnDefinitions));
 
-        if ($writable !== []) {
-            try {
-                $db->table($table)->where($key, $id)->update($writable);
-            } catch (QueryException $exception) {
-                throw $this->toValidationException($exception, $db, $table);
-            }
+        try {
+            $instance->save();
+        } catch (QueryException $exception) {
+            throw $this->toValidationException($exception, $instance->getConnection(), $table);
         }
 
         return $this->find($connection, $model, $id);
     }
 
     /**
-     * EX-418/EX-420 : supprime un item existant. Renvoie `false` si l'item
-     * n'existe pas (cf. ItemController::destroy, qui traduit ce cas en 404).
-     * Aucune suppression forcée (EX-420) : si l'item est encore référencé par
-     * une clé étrangère d'un autre enregistrement, la QueryException levée
-     * par le moteur de BDD est traduite en ItemDeletionException plutôt que
-     * d'être contournée (ex. suppression en cascade).
+     * EX-424/EX-418/EX-420 : supprime un item existant via l'instance
+     * Eloquent résolue (delete()) pour déclencher deleting/deleted. Renvoie
+     * `false` si l'item n'existe pas (cf. ItemController::destroy, qui
+     * traduit ce cas en 404). Aucune suppression forcée (EX-420) : si l'item
+     * est encore référencé par une clé étrangère d'un autre enregistrement,
+     * la QueryException levée par le moteur de BDD est traduite en
+     * ItemDeletionException plutôt que d'être contournée (ex. suppression en
+     * cascade).
      *
      * @throws ItemDeletionException
      */
     public function delete(string $connection, string $model, string $id): bool
     {
         $class = $this->resolver->resolve($connection, $model);
-        $instance = new $class;
-        $db = $instance->getConnection();
-        $table = $instance->getTable();
-        $key = $instance->getKeyName();
+        $instance = $class::find($id);
 
-        if (! $db->table($table)->where($key, $id)->exists()) {
+        if ($instance === null) {
             return false;
         }
 
         try {
-            $db->table($table)->where($key, $id)->delete();
+            $instance->delete();
         } catch (QueryException $exception) {
-            throw $this->toDeletionException($exception, $db, $table);
+            throw $this->toDeletionException($exception, $instance->getConnection(), $instance->getTable());
         }
 
         return true;
@@ -222,14 +216,68 @@ class ItemRepository
     }
 
     /**
-     * EX-416 : ne conserve, parmi les valeurs soumises, que celles
-     * correspondant à une colonne réelle de la table et qui n'est pas une
-     * colonne technique (clé primaire, horodatages) — ces dernières sont
-     * gérées par ce repository (create) ou non modifiables du tout (update).
-     * Encode en JSON la valeur d'une colonne de type JSON soumise sous forme
-     * de tableau/objet (le cas normal pour un formulaire front, EX-414) : la
-     * requête passe par le query builder brut plutôt que par `Model::save()`,
-     * qui aurait fait cet encodage lui-même via le cast `json` d'Eloquent.
+     * EX-422 : restreint les colonnes exposées à celles réellement connues du
+     * code du modèle hôte — `$fillable`, attributs castés (`$casts`/
+     * `casts()`), colonnes techniques (clé primaire, timestamps, déjà gérées
+     * par `technicalColumns()`) et clés étrangères déclarées via une relation
+     * Eloquent (EX-423, ci-dessous) — le schéma de la base ne fournissant
+     * plus que le type de chacune (`ColumnIntrospector::forTable()`, resté
+     * inchangé). Une colonne de la table absente de ces quatre sources
+     * (jamais fillable, jamais castée, ni technique, ni clé étrangère
+     * déclarée) disparaît donc entièrement du listing/de la fiche détail/du
+     * formulaire, plutôt que d'être seulement affichée en lecture seule
+     * (EX-421/EX-416) : lecture assumée d'EX-422 après clarification, la
+     * tension avec EX-401/EX-406 (« toutes les colonnes ») étant résolue en
+     * faveur de la fidélité au code hôte.
+     *
+     * EX-423 : une clé étrangère déclarée via une relation Eloquent
+     * (`belongsTo`) prévaut sur la seule contrainte FK de la base — prise en
+     * compte même sans contrainte réelle en base, sa cible (table/colonne
+     * référencée) étant celle de la relation plutôt que celle de la
+     * contrainte quand les deux existent (cf. `ColumnIntrospector::
+     * relationForeignKeys()`).
+     *
+     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null}>
+     */
+    private function columnsFor(string $connection, Model $instance): array
+    {
+        $relations = $this->columns->relationForeignKeys($instance);
+        $exposed = array_unique(array_merge(
+            $instance->getFillable(),
+            array_keys($instance->getCasts()),
+            $this->technicalColumns($instance),
+            array_keys($relations),
+        ));
+
+        return collect($this->columns->forTable($connection, $instance->getTable()))
+            ->filter(fn (array $column) => in_array($column['name'], $exposed, true))
+            ->map(function (array $column) use ($relations) {
+                if (! isset($relations[$column['name']])) {
+                    return $column;
+                }
+
+                return [
+                    ...$column,
+                    'type' => ColumnType::FOREIGN_KEY->value,
+                    'is_foreign_key' => true,
+                    'foreign_key' => $relations[$column['name']],
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * EX-416/EX-421 : ne conserve, parmi les valeurs soumises, que celles
+     * correspondant à une colonne réelle de la table, qui n'est pas une
+     * colonne technique (clé primaire, horodatages — gérées par ce
+     * repository ou non modifiables du tout) et que le modèle hôte autorise
+     * en mass assignment (`$fillable`/`$guarded`, EX-421). Encode en JSON la
+     * valeur d'une colonne de type JSON soumise sous forme de tableau/objet
+     * (le cas normal pour un formulaire front, EX-414), sauf si le modèle
+     * hôte déclare déjà un cast pour cette colonne (`array`/`json`/...) : le
+     * cast d'Eloquent s'en chargera lui-même à l'écriture, un encodage
+     * préalable produirait une valeur doublement encodée.
      *
      * @param  array<string, mixed>  $values
      * @param  array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null}>  $columnDefinitions
@@ -247,10 +295,30 @@ class ItemRepository
         return collect($values)
             ->only($known)
             ->except($technical)
-            ->map(fn ($value, $column) => in_array($column, $jsonColumns, true) && is_array($value)
+            ->filter(fn ($value, $column) => $instance->isFillable($column))
+            ->map(fn ($value, $column) => in_array($column, $jsonColumns, true) && is_array($value) && ! $instance->hasCast($column)
                 ? json_encode($value)
                 : $value)
             ->all();
+    }
+
+    /**
+     * Un modèle Eloquent a `$timestamps` à `true` par défaut, sans lien
+     * garanti avec la présence réelle des colonnes created_at/updated_at dans
+     * la table (ex. modèle sans `$table->timestamps()` déclaré) — Eloquent
+     * lèverait une erreur SQL en tentant de les renseigner à l'écriture si
+     * elles n'existent pas réellement (cf. $known).
+     *
+     * @param  array<int, string>  $known
+     */
+    private function disableTimestampsIfColumnsMissing(Model $instance, array $known): void
+    {
+        if (
+            $instance->usesTimestamps()
+            && (! in_array($instance->getCreatedAtColumn(), $known, true) || ! in_array($instance->getUpdatedAtColumn(), $known, true))
+        ) {
+            $instance->timestamps = false;
+        }
     }
 
     /**
@@ -272,12 +340,13 @@ class ItemRepository
      * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null}  $column
      * @param  array<int, string>  $technical
      */
-    private function describeColumn(string $connection, array $column, array $technical): array
+    private function describeColumn(string $connection, array $column, array $technical, Model $instance): array
     {
         $described = [
             'column' => $column['name'],
             'type' => $column['type'],
             'technical' => in_array($column['name'], $technical, true), // EX-416
+            'fillable' => $instance->isFillable($column['name']), // EX-421
         ];
 
         if ($column['is_foreign_key']) {
@@ -296,9 +365,9 @@ class ItemRepository
      * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null}  $column
      * @param  array<int, string>  $technical
      */
-    private function decorate(Connection $db, string $connection, array $column, mixed $value, array $technical): array
+    private function decorate(Connection $db, string $connection, array $column, mixed $value, array $technical, Model $instance): array
     {
-        $decorated = $this->describeColumn($connection, $column, $technical) + [
+        $decorated = $this->describeColumn($connection, $column, $technical, $instance) + [
             'value' => $value,
             'is_null' => $value === null, // EX-409 : distinct d'une chaîne vide, qui reste ''
         ];
