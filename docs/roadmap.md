@@ -1,6 +1,6 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-26 (ajout des Phases 11-13 — séquencement des exigences EX-432 à EX-447, non encore développées).
+Dernière mise à jour : 2026-07-26 (Phase 11 développée et testée — filtrage et tri du listing d'items).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
@@ -9,9 +9,9 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 3. Modèles (EX-301 à EX-309)
 4. Items (EX-401 à EX-447)
 
-Les exigences EX-101 à EX-431 sont toutes développées (Phases 0 à 10 ci-dessous, closes).
+Les exigences EX-101 à EX-436 sont toutes développées (Phases 0 à 11 ci-dessous, closes).
 
-Les exigences EX-432 à EX-447 (module 4 — filtrage/tri du listing d'items, gestion des items soft-deleted, mise à jour à la demande du cache Scout) ont été ajoutées aux SFD après la clôture de la Phase 10 et ne sont pas encore développées. Elles sont désormais séquencées dans les Phases 11-13 ci-dessous.
+Les exigences EX-437 à EX-447 (module 4 — gestion des items soft-deleted, mise à jour à la demande du cache Scout) ont été ajoutées aux SFD après la clôture de la Phase 10 et ne sont pas encore développées. Elles sont désormais séquencées dans les Phases 12-13 ci-dessous.
 
 ## Architecture technique retenue
 
@@ -38,7 +38,7 @@ Les exigences EX-432 à EX-447 (module 4 — filtrage/tri du listing d'items, ge
 | 8     | Identité visuelle              | ✅ fait    |
 | 9     | Relations entre modèles        | ✅ fait    |
 | 10    | Compatibilité Laravel 11/12/13 | ✅ fait    |
-| 11    | Filtrage et tri des items      | ⬜ à faire |
+| 11    | Filtrage et tri des items      | ✅ fait    |
 | 12    | Items soft-deleted             | ⬜ à faire |
 | 13    | Cache Scout à la demande       | ⬜ à faire |
 
@@ -279,19 +279,21 @@ Points d'attention pour la suite :
 
 Porte sur le même endpoint `GET /connections/{c}/models/{m}/items` que la Phase 4a (EX-401/EX-403) — proposée avant la Phase 12 car le filtre soft-deleted (EX-438) s'exprime naturellement comme un paramètre de requête supplémentaire sur ce même endpoint, une fois le mécanisme générique de filtre en place.
 
-- [ ] Extension du endpoint de listing avec un ou plusieurs paramètres de filtre par colonne (EX-432) — colonnes restreintes à celles exposées par `ItemRepository::columnsFor()` (EX-422), jamais à un nom de colonne brut passé tel quel par le client, pour écarter tout risque d'injection via un nom de colonne/direction de tri non validé
-- [ ] Filtre texte « contient », insensible à la casse, pour les colonnes de type texte ; égalité stricte pour les autres types (EX-433)
-- [ ] Combinaison en ET (AND) de plusieurs filtres de colonnes appliqués simultanément (EX-434)
-- [ ] Tri sur une ou plusieurs colonnes, chacune avec sa direction (EX-435)
-- [ ] Ordre de priorité explicite entre colonnes de tri lorsque plusieurs sont actives simultanément (EX-436)
-- [ ] Front : contrôles de filtre/tri sur `ItemList.vue` (un champ par colonne principale a minima, à étendre si besoin), état reflété dans l'URL (query params) pour rester partageable/rechargeable
-- Tests Feature à écrire : filtre texte partiel insensible à la casse, filtre égalité stricte sur colonne non-texte, combinaison de plusieurs filtres (ET), tri simple, tri multi-colonnes avec priorité, tentative de filtre/tri sur un nom de colonne inexistant ou non exposée par `columnsFor()` (rejet explicite, pas d'erreur SQL)
-- Tests Unit à écrire : construction de la clause de filtre par type de colonne, application de l'ordre de priorité de tri
+- [x] Extension du endpoint de listing avec un ou plusieurs paramètres de filtre par colonne (EX-432) — `filter[colonne]=valeur` (répétable), parsé nativement par Laravel en tableau associatif (`$request->query('filter', [])`) ; colonnes restreintes à celles exposées par `ItemRepository::columnsFor()` (EX-422) via la nouvelle classe `Support\ItemQueryFilter`, jamais un nom de colonne brut passé tel quel — une colonne inconnue ou non exposée lève `Support\ItemFilterException`, traduite en 422 par `ItemController::index()` (jamais une requête SQL tentée dessus)
+- [x] Filtre texte « contient », insensible à la casse, pour les colonnes de type texte ; égalité stricte pour les autres types (EX-433) — `Illuminate\Database\Query\Builder::whereLike()` (natif depuis Laravel 11, plancher de ce package depuis la Phase 10), portable mysql/pgsql/sqlite sans SQL spécifique par moteur ; colonne de clé étrangère et colonne JSON traitées comme tout type non-texte (égalité stricte sur la valeur brute, pas de résolution ni de recherche dans le JSON)
+- [x] Combinaison en ET (AND) de plusieurs filtres de colonnes appliqués simultanément (EX-434) — plusieurs `where()`/`whereLike()` chaînés sur le même `Builder` sont en ET par défaut chez Laravel, aucun code dédié nécessaire
+- [x] Tri sur une ou plusieurs colonnes, chacune avec sa direction (EX-435) — `sort=colonne1,-colonne2` (`-` en préfixe = descendant)
+- [x] Ordre de priorité explicite entre colonnes de tri lorsque plusieurs sont actives simultanément (EX-436) — l'ordre du paramètre `sort` est l'ordre d'appel d'`orderBy()`, qui est déjà l'ordre de priorité chez Laravel
+- [x] Front : contrôles de filtre/tri sur `ItemList.vue`, état reflété dans l'URL (query params) pour rester partageable/rechargeable — première page du plug-in à lire/écrire `route.query` (`connections/[connection]/models/[model]/index.vue`), `router.replace()` (jamais `push`, pour ne pas empiler l'historique à chaque frappe/clic) ; en-têtes de colonnes cliquables (clic simple = tri sur cette seule colonne, Maj+clic = ajoute/retire un critère de tri secondaire, priorité = ordre d'ajout) ; une ligne de champs de filtre sous l'en-tête (un par colonne exposée, sauf JSON — pas de champ rendu, une égalité stricte sur une valeur JSON sérialisée n'ayant pas d'utilité pour l'utilisateur) ; filtres texte débounced 300 ms, même pattern que la recherche de modèles (Phase 5)
+- Tests Feature : `tests/Feature/ItemListingTest.php` complété (filtre texte partiel insensible à la casse, filtre égalité stricte sur colonne non-texte, combinaison de plusieurs filtres en ET, tri simple, tri multi-colonnes avec vérification de la priorité, filtre/tri sur colonne inexistante ou non exposée → 422 explicite, jamais une erreur SQL 500)
+- Tests Unit : nouveau `tests/Unit/ItemQueryFilterTest.php` (construction de la clause de filtre par type de colonne, application de l'ordre de priorité de tri, colonne inconnue), `tests/Unit/ItemRepositoryTest.php` complété (mêmes scénarios au niveau du repository, y compris une colonne réelle de la table mais non exposée par `columnsFor()`) — 166 tests / 365 assertions au vert (129 avant cette phase)
 
-Points d'attention identifiés en amont (à vérifier à l'implémentation) :
-- **Limite SFD explicite** : le filtre/tri ne s'applique qu'au listing standard d'un modèle, jamais aux tableaux d'objets liés (EX-425 à EX-431, Phase 9) — pas d'extension de `RelationRepository::paginateRelated()` prévue ici.
-- **Cohérence avec le point ouvert EX-402** : filtre et tri portent sur l'ensemble des colonnes exposées par le modèle, indépendamment de la sélection non tranchée des colonnes « principales » du listing compact.
-- Le filtre par colonne de clé étrangère (type `foreign_key`) reste à trancher : égalité stricte sur la valeur brute de la colonne (comportement par défaut d'EX-433 pour un type non-texte), pas de résolution vers l'item lié.
+Points d'attention :
+- **Limite SFD explicite** : le filtre/tri ne s'applique qu'au listing standard d'un modèle, jamais aux tableaux d'objets liés (EX-425 à EX-431, Phase 9) — pas d'extension de `RelationRepository::paginateRelated()`, qui reste un mécanisme de pagination distinct et non filtrable.
+- **Cohérence avec le point ouvert EX-402** : le listing continue de renvoyer la valeur brute de **toutes** les colonnes réelles de la table (`ItemRepository::paginate()` inchangé sur ce point, `SELECT *`), tandis que le filtre/tri ne peut porter que sur les colonnes exposées par `columnsFor()` (EX-422) — un sous-ensemble parfois plus restreint. Côté front, `ItemList.vue` dérive ses en-têtes des clés de la première ligne renvoyée (comportement inchangé) et ne rend un champ de filtre/tri que pour les colonnes connues du schéma `/columns` ; sur un listing vide, les en-têtes se rabattent sur ce même schéma (gap corrigé au passage : `ItemList.vue` n'affichait auparavant aucun en-tête sur un listing vide, la liste de colonnes étant dérivée uniquement des données).
+- Le filtre par colonne de clé étrangère (type `foreign_key`) est traité comme tout type non-texte : égalité stricte sur la valeur brute de la colonne, pas de résolution vers l'item lié.
+- **`ItemRepository::tableFor()` supprimée** : remplacée par une résolution complète de l'instance Eloquent directement dans `paginate()` (même schéma que `find()`), nécessaire pour pouvoir appeler `columnsFor()` ; son seul appelant a disparu avec elle.
+- **Vérifié manuellement contre l'environnement `docker-compose` réel** (mysql + pgsql), pas seulement via les tests sqlite : `GET /connections/mysql/models/Product/items?filter[name]=REICIENDIS&sort=-price_cents` confirme le « contient » insensible à la casse et le tri descendant sur les données de démo mysql ; même vérification côté pgsql (`Article`, filtre sur `title`) ; `?filter[nope]=x` et `?sort=does_not_exist` renvoient bien un 422 explicite (`{message, errors}`) sur les deux connexions, jamais une erreur 500. Non vérifié dans un navigateur réel (`chromium-cli` indisponible dans cet environnement, limite déjà documentée Phases 6/7/8/9) : rendu HTML SSR confirmé via `curl` authentifié sur le conteneur `frontend` (en-têtes de colonnes triables et champs de filtre présents dans le HTML), mais le clic/la frappe utilisateur et la mise à jour de l'URL n'ont pas été observés visuellement.
 
 ## Phase 12 — Items : gestion des items soft-deleted (module 4, EX-437 à EX-443)
 

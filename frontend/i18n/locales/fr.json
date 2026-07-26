@@ -30,10 +30,14 @@
     "title": "Items — {model}",
     "empty": "Aucun item disponible pour ce modèle.",
     "new": "+ Nouvel item",
-    "page": "Page {current} / {last} ({total} item(s))"
+    "page": "Page {current} / {last} ({total} item(s))",
+    "filterPlaceholder": "Filtrer…",
+    "sortAscending": "Tri croissant",
+    "sortDescending": "Tri décroissant",
+    "clearFiltersAndSorts": "Effacer filtres & tris"
   },
   "itemDetail": {
-    "title": "{model} — item {item}",
+    "title": "{model} — Item {item}",
     "breadcrumbItem": "Item {item}",
     "null": "NULL",
     "emptyString": "(chaîne vide)",
@@ -66,7 +70,7 @@
     "cancel": "Annuler"
   },
   "itemCreate": {
-    "title": "{model} — nouvel item",
+    "title": "{model} — Nouvel item",
     "breadcrumbNew": "Nouvel item",
     "create": "Créer",
     "created": "Item créé.",

@@ -1,0 +1,1 @@
+import{A as e,C as n,D as o}from"./Da5uKN-A.js";const s={},t=["aria-label"];function c(a,_){return n(),o("span",{class:"spinner",role:"status","aria-label":a.$t("common.loading")},null,8,t)}const l=e(s,[["render",c],["__scopeId","data-v-4d16ab5a"]]);export{l as _};

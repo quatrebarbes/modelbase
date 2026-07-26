@@ -26,19 +26,29 @@ class ItemRepository
         private EloquentModelFinder $models,
         private ColumnIntrospector $columns,
         private DatabaseErrorTranslator $errors,
+        private ItemQueryFilter $queryFilter,
     ) {
     }
 
     /**
+     * @param  array<string, mixed>  $filters
      * @return array{data: array<int, array<string, mixed>>, meta: array{current_page: int, last_page: int, per_page: int, total: int}}
+     *
+     * @throws ItemFilterException
      */
-    public function paginate(string $connection, string $model, int $page, int $perPage): array
+    public function paginate(string $connection, string $model, int $page, int $perPage, array $filters = [], ?string $sort = null): array
     {
-        [$db, $table, $keyName] = $this->tableFor($connection, $model);
+        $class = $this->resolver->resolve($connection, $model);
+        $instance = new $class;
+        $db = $instance->getConnection();
+        $table = $instance->getTable();
+        $keyName = $instance->getKeyName();
 
         // Un modèle Eloquent déclaré peut ne correspondre à aucune table
         // réelle (ex. table pas encore migrée en prod) : traité comme un
         // modèle sans item (EX-401/EX-403/EX-404), pas comme une erreur.
+        // Filtres/tri ne sont pas validés dans ce cas (pas de colonnes à
+        // valider sans table réelle), comme find()/columns() ci-dessous.
         if (! $db->getSchemaBuilder()->hasTable($table)) {
             return [
                 'data' => [],
@@ -52,7 +62,25 @@ class ItemRepository
             ];
         }
 
-        $paginator = $db->table($table)->paginate($perPage, ['*'], 'page', max(1, $page));
+        $query = $db->table($table);
+
+        if ($filters !== [] || ($sort !== null && $sort !== '')) {
+            // EX-432 : colonnes de filtre/tri restreintes à celles exposées
+            // par columnsFor() (EX-422), jamais un nom de colonne brut.
+            $columnTypes = collect($this->columnsFor($connection, $instance))
+                ->mapWithKeys(fn (array $column) => [$column['name'] => ColumnType::from($column['type'])])
+                ->all();
+
+            if ($filters !== []) {
+                $this->queryFilter->applyFilters($query, $filters, $columnTypes);
+            }
+
+            if ($sort !== null && $sort !== '') {
+                $this->queryFilter->applySort($query, $sort, $columnTypes);
+            }
+        }
+
+        $paginator = $query->paginate($perPage, ['*'], 'page', max(1, $page));
 
         return [
             'data' => collect($paginator->items())->map(fn ($row) => (array) $row)->all(),
@@ -234,17 +262,6 @@ class ItemRepository
         }
 
         return true;
-    }
-
-    /**
-     * @return array{0: Connection, 1: string, 2: string}
-     */
-    private function tableFor(string $connection, string $model): array
-    {
-        $class = $this->resolver->resolve($connection, $model);
-        $instance = new $class;
-
-        return [$instance->getConnection(), $instance->getTable(), $instance->getKeyName()];
     }
 
     /**

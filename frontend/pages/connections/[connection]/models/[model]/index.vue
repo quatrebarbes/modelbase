@@ -1,27 +1,83 @@
 <script setup lang="ts">
 // EX-401/EX-402/EX-403/EX-404 : listing paginé des items d'un modèle.
+// EX-432 à EX-436 : filtre/tri par colonne, état reflété dans l'URL (query
+// params) pour rester partageable/rechargeable.
 const route = useRoute()
+const router = useRouter()
 const connection = route.params.connection as string
 const model = route.params.model as string
 
 const api = useApiClient()
 const { t } = useI18n()
-const page = ref(1)
 const perPage = 15
 
+function parseInitialFilters(): Record<string, string> {
+  const initial: Record<string, string> = {}
+
+  for (const [key, value] of Object.entries(route.query)) {
+    const match = key.match(/^filter\[(.+)\]$/)
+    if (match && typeof value === 'string') initial[match[1]] = value
+  }
+
+  return initial
+}
+
+const page = ref(route.query.page ? Number(route.query.page) : 1)
+const sort = ref(typeof route.query.sort === 'string' ? route.query.sort : '')
+const filters = ref<Record<string, string>>(parseInitialFilters())
+// Filtres texte débounced (300 ms) pour ne pas relancer une requête à chaque
+// caractère tapé, même pattern que connections/[connection]/index.vue.
+const debouncedFilters = ref<Record<string, string>>({ ...filters.value })
+let debounceTimer: ReturnType<typeof setTimeout>
+watch(filters, (value) => {
+  clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    debouncedFilters.value = { ...value }
+    page.value = 1
+  }, 300)
+}, { deep: true })
+
+// Changer le tri remet la page à 1, une page 2 pouvant ne plus exister une
+// fois le tri (ou un filtre, ci-dessus) appliqué.
+watch(sort, () => { page.value = 1 })
+
+const queryParams = computed(() => {
+  const query: Record<string, string | number> = { page: page.value, per_page: perPage }
+
+  if (sort.value) query.sort = sort.value
+
+  for (const [column, value] of Object.entries(debouncedFilters.value)) {
+    query[`filter[${column}]`] = value
+  }
+
+  return query
+})
+
+// EX-432 à EX-436 : reflète page/filtre/tri dans l'URL pour rester
+// partageable/rechargeable, sans empiler l'historique de navigation.
+watch(queryParams, (query) => router.replace({ query }))
+
 const { data, pending } = await useAsyncData(
-  () => `items-${connection}-${model}-${page.value}`,
-  () => api(`/connections/${connection}/models/${model}/items`, {
-    query: { page: page.value, per_page: perPage },
-  }),
-  { watch: [page] }
+  () => `items-${connection}-${model}-${JSON.stringify(queryParams.value)}`,
+  () => api(`/connections/${connection}/models/${model}/items`, { query: queryParams.value }),
+  { watch: [queryParams] }
+)
+
+const { data: columnsData } = await useAsyncData(
+  `items-columns-${connection}-${model}`,
+  () => api(`/connections/${connection}/models/${model}/columns`)
 )
 
 const items = computed(() => data.value?.data ?? [])
 const meta = computed(() => data.value?.meta)
+const columns = computed(() => columnsData.value?.data ?? [])
 
 // EX-306 : accès au diagramme des relations depuis le listing des items.
 const showDiagram = ref(false)
+
+// Réf vers ItemList pour afficher son bouton "effacer filtres/tris" dans la
+// toolbar de la page (même ligne que "+ Nouvel item"), cf. ItemList.vue.
+const itemListRef = ref<{ hasActiveFilterOrSort: boolean; clearFiltersAndSort: () => void } | null>(null)
 
 useHead({ title: t('items.title', { model }) })
 </script>
@@ -48,6 +104,14 @@ useHead({ title: t('items.title', { model }) })
           {{ $t('relations.showDiagram') }}
         </button>
       </div>
+      <button
+        v-if="itemListRef?.hasActiveFilterOrSort"
+        type="button"
+        class="btn"
+        @click="itemListRef?.clearFiltersAndSort()"
+      >
+        {{ $t('items.clearFiltersAndSorts') }}
+      </button>
     </div>
     <RelationDiagram
       v-if="showDiagram"
@@ -55,7 +119,16 @@ useHead({ title: t('items.title', { model }) })
       :model="model"
       @close="showDiagram = false"
     />
-    <ItemList :connection="connection" :model="model" :items="items" :primary-key="meta?.primary_key" />
+    <ItemList
+      ref="itemListRef"
+      v-model:filters="filters"
+      v-model:sort="sort"
+      :connection="connection"
+      :model="model"
+      :items="items"
+      :primary-key="meta?.primary_key"
+      :columns="columns"
+    />
     <div v-if="meta && meta.total > 0" class="item-pagination-row">
       <ItemPagination v-model:page="page" :meta="meta" />
       <Spinner v-if="pending" />

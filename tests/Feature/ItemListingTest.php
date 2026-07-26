@@ -155,6 +155,120 @@ class ItemListingTest extends TestCase
         $response->assertJsonPath('meta.current_page', 2);
     }
 
+    /**
+     * EX-433 : filtre « contient » insensible à la casse pour une colonne de
+     * type texte.
+     */
+    public function test_it_filters_items_with_a_case_insensitive_contains_match_on_a_text_column(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', ['filter' => ['name' => 'HAM']]));
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.name', 'Hammer');
+    }
+
+    /**
+     * EX-433 : égalité stricte pour une colonne d'un type autre que texte.
+     */
+    public function test_it_filters_items_with_a_strict_match_on_a_non_text_column(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', ['filter' => ['category_id' => 1]]));
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.name', 'Hammer');
+    }
+
+    /**
+     * EX-434 : plusieurs filtres de colonnes combinés en ET.
+     */
+    public function test_it_combines_multiple_filters_with_and(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', [
+            'filter' => ['category_id' => 1, 'name' => 'Orphan'],
+        ]));
+
+        $response->assertOk();
+        $response->assertJsonPath('meta.total', 0);
+    }
+
+    /**
+     * EX-435 : tri sur une seule colonne, direction descendante.
+     */
+    public function test_it_sorts_items_by_a_single_column_descending(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', ['sort' => '-name']));
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.name', 'Orphan');
+        $response->assertJsonPath('data.1.name', 'Hammer');
+    }
+
+    /**
+     * EX-436 : ordre de priorité entre colonnes de tri = ordre de la liste
+     * transmise dans `sort` — un troisième produit de même category_id
+     * qu'Hammer, mais de nom différent, vérifie que le tri secondaire
+     * (name desc) ne s'applique qu'au sein du groupe déjà ordonné par le tri
+     * primaire (category_id asc).
+     */
+    public function test_it_sorts_items_by_multiple_columns_in_priority_order(): void
+    {
+        $user = UserFactory::new()->create();
+
+        DB::connection('primary')->table('products')->insert([
+            'category_id' => 1,
+            'name' => 'Anvil',
+            'price' => 4.5,
+            'metadata' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', ['sort' => 'category_id,-name']));
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.name', 'Hammer');
+        $response->assertJsonPath('data.1.name', 'Anvil');
+        $response->assertJsonPath('data.2.name', 'Orphan');
+    }
+
+    /**
+     * EX-432 : un nom de colonne de filtre inconnu ou non exposé est rejeté
+     * explicitement en 422, jamais tenté tel quel dans une requête SQL (pas
+     * de 500).
+     */
+    public function test_it_rejects_a_filter_on_an_unknown_column_with_a_422(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', ['filter' => ['does_not_exist' => 'x']]));
+
+        $response->assertStatus(422);
+        $response->assertJsonStructure(['message', 'errors' => ['does_not_exist']]);
+    }
+
+    /**
+     * EX-432 : même garde-fou côté tri.
+     */
+    public function test_it_rejects_a_sort_on_an_unknown_column_with_a_422(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', ['sort' => 'does_not_exist']));
+
+        $response->assertStatus(422);
+        $response->assertJsonStructure(['message', 'errors' => ['does_not_exist']]);
+    }
+
     public function test_it_returns_an_empty_list_without_error_for_a_model_with_no_items(): void
     {
         $user = UserFactory::new()->create();

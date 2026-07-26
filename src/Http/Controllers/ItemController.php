@@ -3,6 +3,7 @@
 namespace Quatrebarbes\Modelbase\Http\Controllers;
 
 use Quatrebarbes\Modelbase\Support\ItemDeletionException;
+use Quatrebarbes\Modelbase\Support\ItemFilterException;
 use Quatrebarbes\Modelbase\Support\ItemRepository;
 use Quatrebarbes\Modelbase\Support\ItemValidationException;
 use Illuminate\Http\Request;
@@ -16,16 +17,26 @@ class ItemController extends Controller
 
     /**
      * EX-401/EX-403/EX-404 : liste paginée des items d'un modèle ; un modèle
-     * sans item renvoie un `data` vide (pas une erreur).
+     * sans item renvoie un `data` vide (pas une erreur). EX-432/EX-435 :
+     * `filter[colonne]=valeur` (répétable) et `sort=colonne,-colonne2`
+     * (ordre = priorité, EX-436), restreints aux colonnes exposées par
+     * ItemRepository::columnsFor() — une colonne inconnue ou non exposée est
+     * rejetée en 422, jamais tentée telle quelle dans une requête SQL.
      */
     public function index(Request $request, string $connection, string $model)
     {
         $page = (int) $request->query('page', 1);
         $perPage = (int) $request->query('per_page', 15);
+        $filters = (array) $request->query('filter', []);
+        $sort = $request->query('sort');
 
-        return response()->json(
-            $this->items->paginate($connection, $model, $page, max(1, $perPage))
-        );
+        try {
+            $result = $this->items->paginate($connection, $model, $page, max(1, $perPage), $filters, $sort);
+        } catch (ItemFilterException $exception) {
+            return response()->json(['message' => 'Filtre ou tri invalide.', 'errors' => $exception->errors()], 422);
+        }
+
+        return response()->json($result);
     }
 
     /**

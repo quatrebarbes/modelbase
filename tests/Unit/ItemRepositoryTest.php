@@ -5,6 +5,8 @@ namespace Quatrebarbes\Modelbase\Tests\Unit;
 use Quatrebarbes\Modelbase\Support\ColumnIntrospector;
 use Quatrebarbes\Modelbase\Support\DatabaseErrorTranslator;
 use Quatrebarbes\Modelbase\Support\EloquentModelFinder;
+use Quatrebarbes\Modelbase\Support\ItemFilterException;
+use Quatrebarbes\Modelbase\Support\ItemQueryFilter;
 use Quatrebarbes\Modelbase\Support\ItemRepository;
 use Quatrebarbes\Modelbase\Support\ItemValidationException;
 use Quatrebarbes\Modelbase\Support\ModelResolver;
@@ -160,7 +162,7 @@ class ItemRepositoryTest extends TestCase
     {
         $finder = new EloquentModelFinder;
 
-        return new ItemRepository(new ModelResolver($finder), $finder, new ColumnIntrospector, new DatabaseErrorTranslator);
+        return new ItemRepository(new ModelResolver($finder), $finder, new ColumnIntrospector, new DatabaseErrorTranslator, new ItemQueryFilter);
     }
 
     public function test_it_paginates_items_of_a_model(): void
@@ -171,6 +173,111 @@ class ItemRepositoryTest extends TestCase
         $this->assertSame(2, $page['meta']['total']);
         $this->assertSame(1, $page['meta']['current_page']);
         $this->assertSame(2, $page['meta']['last_page']);
+    }
+
+    /**
+     * EX-433 : filtre « contient » insensible à la casse pour une colonne de
+     * type texte.
+     */
+    public function test_paginate_filters_items_with_a_case_insensitive_contains_match_on_a_text_column(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoProduct', 1, 15, ['name' => 'HAM']);
+
+        $this->assertCount(1, $page['data']);
+        $this->assertSame('Hammer', $page['data'][0]['name']);
+    }
+
+    /**
+     * EX-433 : égalité stricte pour une colonne d'un type autre que texte
+     * (ici une clé étrangère).
+     */
+    public function test_paginate_filters_items_with_a_strict_match_on_a_non_text_column(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoProduct', 1, 15, ['category_id' => 1]);
+
+        $this->assertCount(1, $page['data']);
+        $this->assertSame('Hammer', $page['data'][0]['name']);
+    }
+
+    /**
+     * EX-434 : plusieurs filtres de colonnes combinés en ET.
+     */
+    public function test_paginate_combines_multiple_filters_with_and(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoProduct', 1, 15, [
+            'category_id' => 1,
+            'name' => 'Orphan',
+        ]);
+
+        $this->assertSame(0, $page['meta']['total']);
+    }
+
+    /**
+     * EX-435 : tri sur une seule colonne, direction descendante.
+     */
+    public function test_paginate_sorts_items_by_a_single_column_descending(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoProduct', 1, 15, [], '-name');
+
+        $this->assertSame(['Orphan', 'Hammer'], collect($page['data'])->pluck('name')->all());
+    }
+
+    /**
+     * EX-436 : ordre de priorité entre colonnes de tri = ordre de la liste —
+     * un troisième produit de même category_id qu'Hammer, mais de nom
+     * différent, permet de vérifier que le tri secondaire (name desc) ne
+     * s'applique qu'au sein du groupe déjà ordonné par le tri primaire
+     * (category_id asc).
+     */
+    public function test_paginate_sorts_items_by_multiple_columns_in_priority_order(): void
+    {
+        DB::connection('primary')->table('products')->insert([
+            'category_id' => 1, 'name' => 'Anvil', 'description' => null, 'internal_note' => null, 'secondary_category_id' => null,
+        ]);
+
+        $page = $this->repository()->paginate('primary', 'RepoProduct', 1, 15, [], 'category_id,-name');
+
+        $this->assertSame(['Hammer', 'Anvil', 'Orphan'], collect($page['data'])->pluck('name')->all());
+    }
+
+    /**
+     * EX-432 : un nom de colonne de filtre inconnu est rejeté explicitement,
+     * jamais tenté tel quel dans une requête SQL.
+     */
+    public function test_paginate_throws_a_filter_exception_for_an_unknown_filter_column(): void
+    {
+        $this->expectException(ItemFilterException::class);
+
+        try {
+            $this->repository()->paginate('primary', 'RepoProduct', 1, 15, ['does_not_exist' => 'x']);
+        } catch (ItemFilterException $exception) {
+            $this->assertArrayHasKey('does_not_exist', $exception->errors());
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * EX-432/EX-422 : une colonne réelle de la table mais non exposée par
+     * columnsFor() (ici `internal_note` pour `RepoProductWithRelation`, cf.
+     * test_columns_omits_a_column_unknown_to_the_host_models_code) est
+     * rejetée au même titre qu'une colonne totalement inexistante.
+     */
+    public function test_paginate_throws_a_filter_exception_for_a_column_not_exposed_by_columns_for(): void
+    {
+        $this->expectException(ItemFilterException::class);
+
+        $this->repository()->paginate('primary', 'RepoProductWithRelation', 1, 15, ['internal_note' => 'x']);
+    }
+
+    /**
+     * EX-432 : même garde-fou côté tri.
+     */
+    public function test_paginate_throws_a_filter_exception_for_an_unknown_sort_column(): void
+    {
+        $this->expectException(ItemFilterException::class);
+
+        $this->repository()->paginate('primary', 'RepoProduct', 1, 15, [], 'does_not_exist');
     }
 
     /**
