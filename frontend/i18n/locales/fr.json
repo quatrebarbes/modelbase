@@ -63,7 +63,10 @@
     "forceDelete": "Supprimer définitivement",
     "confirmForceDelete": "Cette suppression est définitive et irréversible. Confirmer ?",
     "forceDeleted": "Item supprimé définitivement.",
-    "forceDeleteFailed": "La suppression définitive a échoué."
+    "forceDeleteFailed": "La suppression définitive a échoué.",
+    "reindex": "Réindexer (Laravel Scout)",
+    "reindexed": "Index mis à jour.",
+    "reindexFailed": "La mise à jour de l'index a échoué."
   },
   "relations": {
     "showDiagram": "Voir les relations",

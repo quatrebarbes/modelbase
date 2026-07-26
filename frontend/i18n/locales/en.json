@@ -63,7 +63,10 @@
     "forceDelete": "Delete permanently",
     "confirmForceDelete": "This deletion is permanent and irreversible. Confirm?",
     "forceDeleted": "Item permanently deleted.",
-    "forceDeleteFailed": "The permanent deletion failed."
+    "forceDeleteFailed": "The permanent deletion failed.",
+    "reindex": "Reindex (Laravel Scout)",
+    "reindexed": "Search index updated.",
+    "reindexFailed": "The search index update failed."
   },
   "relations": {
     "showDiagram": "View relations",

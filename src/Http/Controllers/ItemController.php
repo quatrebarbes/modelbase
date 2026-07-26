@@ -4,6 +4,7 @@ namespace Quatrebarbes\Modelbase\Http\Controllers;
 
 use Quatrebarbes\Modelbase\Support\ItemDeletionException;
 use Quatrebarbes\Modelbase\Support\ItemFilterException;
+use Quatrebarbes\Modelbase\Support\ItemReindexException;
 use Quatrebarbes\Modelbase\Support\ItemRepository;
 use Quatrebarbes\Modelbase\Support\ItemValidationException;
 use Illuminate\Http\Request;
@@ -168,5 +169,30 @@ class ItemController extends Controller
         }
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * EX-444/EX-445/EX-446/EX-447 : déclenche la mise à jour de l'index Scout
+     * d'un item, proposée uniquement pour un modèle utilisant le trait
+     * Searchable. 404 aussi bien pour un item inconnu que pour un modèle
+     * n'utilisant pas ce trait (EX-447, l'action n'étant de toute façon pas
+     * proposée par le front dans ce cas), même principe que restore(). Une
+     * exception levée par le driver Scout du modèle hôte est traduite en 500
+     * plutôt que de laisser remonter une erreur serveur générique, pour que
+     * le front puisse afficher un échec explicite (EX-446).
+     */
+    public function reindex(string $connection, string $model, string $item)
+    {
+        try {
+            $reindexed = $this->items->reindex($connection, $model, $item);
+        } catch (ItemReindexException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 500);
+        }
+
+        if ($reindexed === null) {
+            return response()->json(['message' => self::ITEM_NOT_FOUND], 404);
+        }
+
+        return response()->json(['message' => 'Index mis à jour.']);
     }
 }

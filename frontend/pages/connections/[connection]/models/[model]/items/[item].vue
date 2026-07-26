@@ -36,6 +36,9 @@ const isTrashed = computed(() => data.value?.data?.is_trashed ?? false)
 // message générique historique qui annonçait à tort une suppression
 // définitive.
 const softDeletes = computed(() => data.value?.data?.soft_deletes ?? false)
+// EX-444/EX-447 : indique si le modèle utilise le trait Scout Searchable —
+// conditionne l'affichage de l'action « réindexer ».
+const isSearchable = computed(() => data.value?.data?.is_searchable ?? false)
 const columns = computed(() => columnsData.value?.data ?? [])
 const relations = computed(() => (relationsData.value?.data ?? []).filter((relation: { type: string }) => relation.type !== 'BelongsTo'))
 const initialValues = computed(() => Object.fromEntries(
@@ -50,6 +53,7 @@ const deleteError = ref<string | null>(null)
 const restoring = ref(false)
 const forceDeleting = ref(false)
 const forceDeleteError = ref<string | null>(null)
+const reindexing = ref(false)
 
 useHead({ title: t('itemDetail.title', { model, item }) })
 
@@ -132,6 +136,24 @@ async function handleForceDelete() {
     forceDeleting.value = false
   }
 }
+
+// EX-444/EX-445/EX-446 : déclenche la mise à jour de l'index Scout de cet
+// item, proposée uniquement pour un modèle Searchable (isSearchable) — pas
+// de confirmation préalable (action non destructive, contrairement aux
+// suppressions ci-dessus) ; succès/échec confirmés par le même mécanisme de
+// toast que le reste de la page (Phase 5).
+async function handleReindex() {
+  reindexing.value = true
+
+  try {
+    await api(`/connections/${connection}/models/${model}/items/${item}/reindex`, { method: 'POST' })
+    toast.show(t('itemDetail.reindexed'))
+  } catch {
+    toast.show(t('itemDetail.reindexFailed'))
+  } finally {
+    reindexing.value = false
+  }
+}
 </script>
 
 <template>
@@ -160,11 +182,19 @@ async function handleForceDelete() {
         <button type="button" class="btn btn--danger" :disabled="forceDeleting" @click="handleForceDelete">
           {{ $t('itemDetail.forceDelete') }}
         </button>
+        <!-- EX-444/EX-447 : proposée uniquement pour un modèle Searchable -->
+        <button v-if="isSearchable" type="button" class="btn" :disabled="reindexing" @click="handleReindex">
+          {{ $t('itemDetail.reindex') }}
+        </button>
       </div>
       <div v-else class="toolbar__actions">
         <button type="button" class="btn btn--primary" @click="editing = true">{{ $t('itemDetail.edit') }}</button>
         <!-- EX-418/EX-419 : confirmation obligatoire avant suppression -->
         <button type="button" class="btn btn--danger" :disabled="deleting" @click="handleDelete">{{ $t('itemDetail.delete') }}</button>
+        <!-- EX-444/EX-447 : proposée uniquement pour un modèle Searchable -->
+        <button v-if="isSearchable" type="button" class="btn" :disabled="reindexing" @click="handleReindex">
+          {{ $t('itemDetail.reindex') }}
+        </button>
       </div>
     </div>
 

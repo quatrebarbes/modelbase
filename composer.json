@@ -15,6 +15,7 @@
         "illuminate/support": "^11.0|^12.0|^13.0"
     },
     "require-dev": {
+        "laravel/scout": "^11.4",
         "orchestra/testbench": "^9.0|^10.0|^11.0",
         "phpunit/phpunit": "^10.5|^11.0"
     },

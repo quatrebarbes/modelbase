@@ -7,6 +7,7 @@ use Quatrebarbes\Modelbase\Support\DatabaseErrorTranslator;
 use Quatrebarbes\Modelbase\Support\EloquentModelFinder;
 use Quatrebarbes\Modelbase\Support\ItemFilterException;
 use Quatrebarbes\Modelbase\Support\ItemQueryFilter;
+use Quatrebarbes\Modelbase\Support\ItemReindexException;
 use Quatrebarbes\Modelbase\Support\ItemRepository;
 use Quatrebarbes\Modelbase\Support\ItemValidationException;
 use Quatrebarbes\Modelbase\Support\ModelResolver;
@@ -16,9 +17,23 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
+use Laravel\Scout\ScoutServiceProvider;
 
 class ItemRepositoryTest extends TestCase
 {
+    /**
+     * Phase 13 (EX-444 à EX-447) : le provider Scout n'est enregistré que
+     * pour ce test (macro `searchable()` sur les collections Eloquent,
+     * config par défaut `scout.*`), plutôt que dans la TestCase de base
+     * partagée par toute la suite.
+     */
+    protected function getPackageProviders($app): array
+    {
+        return array_merge(parent::getPackageProviders($app), [
+            ScoutServiceProvider::class,
+        ]);
+    }
+
     protected function defineEnvironment($app): void
     {
         parent::defineEnvironment($app);
@@ -27,6 +42,13 @@ class ItemRepositoryTest extends TestCase
             'driver' => 'sqlite',
             'database' => ':memory:',
         ]);
+
+        // Driver 'database' : cohérent avec le choix retenu pour l'app de
+        // démo (cf. docs/roadmap.md Phase 13) — pas de service externe, et
+        // `DatabaseEngine::update()` est un no-op réel (recherche menée en
+        // direct sur la table à l'usage), donc sans effet de bord à vérifier
+        // ici au-delà de l'absence d'exception.
+        $app['config']->set('scout.driver', 'database');
     }
 
     protected function setUp(): void
@@ -95,6 +117,8 @@ class ItemRepositoryTest extends TestCase
         ]);
 
         $this->putArchivableModel();
+        $this->putSearchableModel();
+        $this->putSearchableArchivableModel();
     }
 
     protected function tearDown(): void
@@ -211,6 +235,70 @@ class ItemRepositoryTest extends TestCase
     private function archivableClass(): string
     {
         return app()->getNamespace().'Models\\RepoArchivableProduct';
+    }
+
+    /**
+     * EX-444 à EX-447 : modèle de test utilisant le trait Scout Searchable,
+     * distinct de RepoProduct (sans ce trait) pour vérifier EX-447.
+     */
+    private function putSearchableModel(): void
+    {
+        $namespace = app()->getNamespace();
+
+        File::put(app_path('Models/RepoSearchableProduct.php'), <<<PHP
+        <?php
+
+        namespace {$namespace}Models;
+
+        use Illuminate\Database\Eloquent\Model;
+        use Laravel\Scout\Searchable;
+
+        class RepoSearchableProduct extends Model
+        {
+            use Searchable;
+
+            protected \$connection = 'primary';
+
+            protected \$table = 'products';
+
+            protected \$fillable = ['category_id', 'name', 'description'];
+        }
+        PHP);
+
+        require_once app_path('Models/RepoSearchableProduct.php');
+    }
+
+    /**
+     * Modèle combinant Searchable et SoftDeletes, pour vérifier que
+     * reindex() retrouve bien un item déjà soft-deleted via withTrashed()
+     * (cohérent avec find(), qui reste accessible sur un tel item).
+     */
+    private function putSearchableArchivableModel(): void
+    {
+        $namespace = app()->getNamespace();
+
+        File::put(app_path('Models/RepoSearchableArchivableProduct.php'), <<<PHP
+        <?php
+
+        namespace {$namespace}Models;
+
+        use Illuminate\Database\Eloquent\Model;
+        use Illuminate\Database\Eloquent\SoftDeletes;
+        use Laravel\Scout\Searchable;
+
+        class RepoSearchableArchivableProduct extends Model
+        {
+            use Searchable, SoftDeletes;
+
+            protected \$connection = 'primary';
+
+            protected \$table = 'archivable_products';
+
+            protected \$fillable = ['name'];
+        }
+        PHP);
+
+        require_once app_path('Models/RepoSearchableArchivableProduct.php');
     }
 
     private function repository(): ItemRepository
@@ -852,5 +940,74 @@ class ItemRepositoryTest extends TestCase
     public function test_force_delete_returns_false_for_a_model_without_soft_deletes(): void
     {
         $this->assertFalse($this->repository()->forceDelete('primary', 'RepoProduct', '1'));
+    }
+
+    /**
+     * EX-444/EX-447 : indicateur exposé par la fiche détail, permettant au
+     * front de proposer (ou non) l'action « réindexer ».
+     */
+    public function test_find_flags_a_model_as_searchable_when_it_uses_the_trait(): void
+    {
+        $found = $this->repository()->find('primary', 'RepoSearchableProduct', '1');
+
+        $this->assertTrue($found['is_searchable']);
+    }
+
+    public function test_find_flags_is_searchable_as_false_for_a_model_without_the_trait(): void
+    {
+        $found = $this->repository()->find('primary', 'RepoProduct', '1');
+
+        $this->assertFalse($found['is_searchable']);
+    }
+
+    /**
+     * EX-444/EX-445 : invoque le mécanisme natif Scout (searchable()) du
+     * modèle hôte — driver 'database' (cf. defineEnvironment()), dont
+     * update() est un no-op réel, donc rien de plus à vérifier ici que
+     * l'absence d'exception et la valeur de retour.
+     */
+    public function test_reindex_updates_the_search_index_for_a_searchable_item(): void
+    {
+        $this->assertTrue($this->repository()->reindex('primary', 'RepoSearchableProduct', '1'));
+    }
+
+    /**
+     * EX-447 : l'action n'est pas applicable à un modèle sans Searchable.
+     */
+    public function test_reindex_returns_null_for_a_model_without_the_searchable_trait(): void
+    {
+        $this->assertNull($this->repository()->reindex('primary', 'RepoProduct', '1'));
+    }
+
+    public function test_reindex_returns_null_for_an_unknown_item(): void
+    {
+        $this->assertNull($this->repository()->reindex('primary', 'RepoSearchableProduct', '404'));
+    }
+
+    /**
+     * Cohérent avec find(), qui reste accessible sur un item déjà
+     * soft-deleted : reindex() le retrouve via withTrashed() pour un modèle
+     * combinant Searchable et SoftDeletes plutôt que de le traiter comme
+     * introuvable.
+     */
+    public function test_reindex_finds_an_already_soft_deleted_item_via_with_trashed(): void
+    {
+        $this->assertTrue($this->repository()->reindex('primary', 'RepoSearchableArchivableProduct', '2'));
+    }
+
+    /**
+     * EX-446 : une défaillance du driver Scout du modèle hôte (ici un driver
+     * non configuré/inconnu, plutôt que de mocker artificiellement une
+     * exception) est traduite en ItemReindexException, à charge du
+     * contrôleur de la restituer en échec explicite plutôt qu'une erreur
+     * serveur générique.
+     */
+    public function test_reindex_throws_a_reindex_exception_when_the_scout_driver_fails(): void
+    {
+        config(['scout.driver' => 'unsupported-driver']);
+
+        $this->expectException(ItemReindexException::class);
+
+        $this->repository()->reindex('primary', 'RepoSearchableProduct', '1');
     }
 }

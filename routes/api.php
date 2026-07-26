@@ -79,6 +79,10 @@ Route::prefix(config('modelbase.route_prefix').'/api')
                         Route::delete('/items/{item}/force', [ItemController::class, 'forceDestroy'])
                             ->name('connections.models.items.force-destroy');
 
+                        // EX-444/EX-445 : mise à jour de l'index Scout de cet item.
+                        Route::post('/items/{item}/reindex', [ItemController::class, 'reindex'])
+                            ->name('connections.models.items.reindex');
+
                         // EX-427/EX-428/EX-429/EX-430/EX-431 : listing paginé
                         // des objets liés d'une relation de cet item.
                         Route::get('/items/{item}/relations/{relation}', [RelationController::class, 'items'])

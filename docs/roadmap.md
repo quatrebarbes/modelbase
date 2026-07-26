@@ -1,6 +1,6 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-26 (Phase 12 développée et testée — gestion des items soft-deleted).
+Dernière mise à jour : 2026-07-26 (Phase 13 développée et testée — mise à jour à la demande du cache Scout).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
@@ -11,7 +11,7 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
 Les exigences EX-101 à EX-436 sont toutes développées (Phases 0 à 11 ci-dessous, closes).
 
-Les exigences EX-437 à EX-447 (module 4 — gestion des items soft-deleted, mise à jour à la demande du cache Scout) ont été ajoutées aux SFD après la clôture de la Phase 10 et ne sont pas encore développées. Elles sont désormais séquencées dans les Phases 12-13 ci-dessous.
+Les exigences EX-437 à EX-447 (module 4 — gestion des items soft-deleted, mise à jour à la demande du cache Scout) ont été ajoutées aux SFD après la clôture de la Phase 10. Elles sont désormais toutes développées (Phases 12-13 ci-dessous, closes).
 
 ## Architecture technique retenue
 
@@ -40,7 +40,7 @@ Les exigences EX-437 à EX-447 (module 4 — gestion des items soft-deleted, mis
 | 10    | Compatibilité Laravel 11/12/13 | ✅ fait    |
 | 11    | Filtrage et tri des items      | ✅ fait    |
 | 12    | Items soft-deleted             | ✅ fait    |
-| 13    | Cache Scout à la demande       | ⬜ à faire |
+| 13    | Cache Scout à la demande       | ✅ fait    |
 
 ---
 
@@ -320,13 +320,18 @@ Points d'attention :
 
 Phase la plus isolée des trois : n'affecte que la fiche détail d'un item, sans toucher au listing ni à sa pagination/son filtrage.
 
-- [ ] Détection du trait Laravel Scout `Searchable` sur le modèle hôte (même approche de réflexion que pour `SoftDeletes`)
-- [ ] Action « réindexer » sur la fiche détail d'un item, proposée uniquement pour un modèle `Searchable` (EX-444, EX-447)
-- [ ] Invocation de `searchable()` sur l'instance Eloquent de l'item, sans réimplémenter de logique d'indexation propre au plug-in (EX-445)
-- [ ] Confirmation visuelle de succès/échec de la mise à jour, cohérente avec le mécanisme de toast déjà en place (`useToast`, Phase 5) (EX-446)
-- Tests Feature à écrire : action présente et fonctionnelle pour un modèle `Searchable`, action absente pour un modèle sans ce trait, confirmation visuelle sur succès et sur échec (driver Scout simulé en échec)
-- Tests Unit à écrire : détection du trait `Searchable`
+- [x] Détection du trait Laravel Scout `Searchable` sur le modèle hôte (même approche de réflexion que pour `SoftDeletes`) — réutilise tel quel `Support\ModelTraitInspector::uses()` (générique depuis la Phase 12, construit en prévision de cette réutilisation), aucune extension nécessaire
+- [x] Action « réindexer » sur la fiche détail d'un item, proposée uniquement pour un modèle `Searchable` (EX-444, EX-447) — nouveau champ `is_searchable` sur `ItemRepository::find()` (même principe que `soft_deletes`/`is_trashed`, Phase 12), consommé côté front par `[item].vue` (bouton conditionné par `isSearchable`, affiché aussi bien pour un item actif que soft-deleted, sans confirmation préalable requise — action non destructive)
+- [x] Invocation de `searchable()` sur l'instance Eloquent de l'item, sans réimplémenter de logique d'indexation propre au plug-in (EX-445) — nouvelle méthode `ItemRepository::reindex()` : résout l'item via `withTrashed()->find()` si le modèle utilise aussi `SoftDeletes` (cohérent avec `find()`, accessible sur un item déjà soft-deleted), sinon `find()` simple ; renvoie `null` si le modèle n'utilise pas `Searchable` ou si l'item est introuvable (404 côté contrôleur, même principe que `restore()`/`forceDelete()`, Phase 12) ; endpoint `POST /connections/{c}/models/{m}/items/{item}/reindex` (`ItemController::reindex`, route `modelbase.api.connections.models.items.reindex`)
+- [x] Confirmation visuelle de succès/échec de la mise à jour, cohérente avec le mécanisme de toast déjà en place (`useToast`, Phase 5) (EX-446) — une exception levée par le driver Scout du modèle hôte lors de `searchable()` est capturée et traduite en `ItemReindexException` (nouvelle, message brut du driver conservé), elle-même traduite en 500 par le contrôleur ; front : `handleReindex()` affiche `itemDetail.reindexed`/`itemDetail.reindexFailed` via toast selon le résultat
+- Tests Feature : `tests/Feature/ItemReindexTest.php` (indicateur `is_searchable` sur la fiche détail pour un modèle avec/sans `Searchable`, réindexation réussie, 404 pour un modèle sans `Searchable`, 404 pour un item inconnu, 500 avec message quand le driver Scout est en défaut)
+- Tests Unit : `tests/Unit/ModelTraitInspectorTest.php` complété (détection explicite du trait Scout `Searchable`, en plus de `SoftDeletes`), `tests/Unit/ItemRepositoryTest.php` complété (`is_searchable` sur `find()`, `reindex()` réussi, `null` pour un modèle sans `Searchable`, `null` pour un item inconnu, retrouve un item déjà soft-deleted via `withTrashed()` pour un modèle combinant `Searchable` et `SoftDeletes`, `ItemReindexException` levée quand le driver Scout échoue) — suite complète 217 tests / 440 assertions au vert (166 tests avant la Phase 11, l'écart inclut aussi les tests déjà ajoutés en Phase 12)
 
-Points d'attention identifiés en amont (à vérifier à l'implémentation) :
-- **Limites SFD explicites** : pas de réindexation en masse (un seul item à la fois) ; si le driver Scout de l'app hôte est asynchrone (file d'attente), le plug-in ne fait que déclencher la synchronisation, sans garantir ni observer le délai de traitement réel — la confirmation visuelle (EX-446) porte donc sur le déclenchement, pas sur la confirmation que l'index a effectivement été mis à jour.
-- Le driver Scout par défaut de l'environnement `docker-compose` de démo n'est pas encore arrêté — à choisir (ex. driver `database`/`collection` local plutôt qu'un service externe type Algolia/Meilisearch) pour permettre un test de bout en bout réaliste sans dépendance externe.
+Points d'attention :
+- **Limites SFD explicites** : pas de réindexation en masse (un seul item à la fois) ; si le driver Scout de l'app hôte est asynchrone (file d'attente), le plug-in ne fait que déclencher la synchronisation (`searchable()`), sans garantir ni observer le délai de traitement réel — la confirmation visuelle (EX-446) porte donc sur le déclenchement, pas sur la confirmation que l'index a effectivement été mis à jour.
+- **Driver Scout de démo tranché : `database`** (nouveau, `laravel/scout` ajouté en dépendance de `demo/composer.json`, `SCOUT_DRIVER=database` dans `demo/.env`/`.env.example`) — local, sans service externe (Algolia/Meilisearch non installés, aucun nouveau service docker-compose), cohérent avec le point ouvert laissé par la préparation de cette phase. `Laravel\Scout\Engines\DatabaseEngine::update()` est un no-op réel (la recherche Scout de ce driver interroge la table en direct plutôt que de maintenir un index séparé) : `searchable()` y réussit toujours trivialement pour un modèle sans autre défaillance, ce qui reste un comportement authentique du driver plutôt qu'un simulacre de test. `demo/app/Models/Product.php` (déjà `SoftDeletes` depuis la Phase 12) utilise désormais aussi `Searchable`, pour disposer d'un modèle de démo réel combinant les deux traits.
+- **Échec du driver Scout testé sans mock** : plutôt que de simuler artificiellement une exception, les tests (Unit et Feature) configurent temporairement `scout.driver` sur une valeur non enregistrée — `Laravel\Scout\EngineManager` (implémentation `Illuminate\Support\Manager`) lève alors une véritable exception à la résolution du driver, capturée et traduite comme n'importe quelle autre défaillance réelle du driver hôte.
+- **Provider Scout enregistré seulement où nécessaire** : `Laravel\Scout\ScoutServiceProvider` n'est ajouté (`getPackageProviders()`) que dans `ItemRepositoryTest`/`ItemReindexTest`, pas dans `tests/TestCase.php` partagée par toute la suite — seuls ces tests exercent réellement le trait `Searchable` (macro `searchable()` sur les collections Eloquent, config `scout.*`) ; `ModelTraitInspectorTest`, qui ne fait que vérifier `class_uses_recursive()` par réflexion sans jamais appeler `searchable()`, n'en a pas besoin (le constructeur de `Laravel\Scout\ModelObserver`, déclenché par le boot du trait, se contente de valeurs de repli via `Config::get(..., false)` même sans config `scout.*` chargée).
+- **`laravel/scout` en dépendance de développement du plug-in** (`composer.json`, `require-dev`), jamais en dépendance de production : la détection du trait (`ModelTraitInspector::uses()`) et la référence `Laravel\Scout\Searchable::class` ne nécessitent pas que la classe existe réellement (`::class` sur un nom pleinement qualifié ne déclenche jamais l'auto-chargement) — un modèle hôte qui n'installe pas Scout n'utilise de toute façon pas ce trait, donc `is_searchable` y vaut naturellement toujours `false`, sans erreur. Seuls les tests du plug-in ont besoin du vrai trait pour être représentatifs.
+- **Vérifié manuellement contre l'environnement `docker-compose` réel (mysql)**, pas seulement via les tests sqlite : `GET /connections/mysql/models/Product/items/1` confirme `is_searchable: true` (`Category`, sans le trait : `false`) ; `POST /connections/mysql/models/Product/items/1/reindex` renvoie 200 (`{"message":"Index mis à jour."}`) ; `POST .../models/Category/items/1/reindex` (modèle sans `Searchable`) et `POST .../models/Product/items/9999/reindex` (item inconnu) renvoient tous deux 404 ; `php artisan tinker` confirme que `class_uses_recursive()` détecte bien `Laravel\Scout\Searchable` sur une instance réelle de `Product` et que `->searchable()` s'exécute sans erreur avec le driver `database` configuré. Rendu front confirmé via `curl` authentifié sur le conteneur `frontend` (port 3000, HTML SSR) : le bouton « Réindexer » est présent sur la fiche détail d'un `Product` (`Searchable`), absent sur celle d'une `Category` (sans le trait) — clic non observé visuellement dans un navigateur réel (`chromium-cli` indisponible dans cet environnement, limite déjà documentée Phases 6/7/8/9/11/12).
+- Build front republié (`resources/dist/modelbase/`) via le même contournement `docker exec` déjà documenté (Phases 7/9) pour ce shell Windows/WSL.

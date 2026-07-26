@@ -6,6 +6,8 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\QueryException;
+use Laravel\Scout\Searchable;
+use Throwable;
 
 /**
  * Listing paginé (EX-401, EX-403), détail décoré par type de colonne (EX-405
@@ -145,7 +147,7 @@ class ItemRepository
      * soft-delete, et adapter le message de confirmation (EX-419) en
      * conséquence.
      *
-     * @return array{id: mixed, is_trashed: bool, soft_deletes: bool, values: array<int, array<string, mixed>>}|null
+     * @return array{id: mixed, is_trashed: bool, soft_deletes: bool, is_searchable: bool, values: array<int, array<string, mixed>>}|null
      */
     public function find(string $connection, string $model, string $id): ?array
     {
@@ -173,6 +175,10 @@ class ItemRepository
             'id' => $row[$key],
             'is_trashed' => $deletedAtColumn !== null && ($row[$deletedAtColumn] ?? null) !== null,
             'soft_deletes' => $deletedAtColumn !== null,
+            // EX-444/EX-447 : indique au front si l'action « réindexer »
+            // (Phase 13) a un sens pour ce modèle, même principe que
+            // `soft_deletes` ci-dessus pour restore()/forceDelete().
+            'is_searchable' => ModelTraitInspector::uses($instance, Searchable::class),
             'values' => collect($this->columnsFor($connection, $instance))
                 ->map(fn (array $column) => $this->decorate($db, $connection, $column, $row[$column['name']] ?? null, $technical, $instance))
                 ->values()
@@ -373,6 +379,47 @@ class ItemRepository
             $instance->delete();
         } catch (QueryException $exception) {
             throw $this->toDeletionException($exception, $instance->getConnection(), $instance->getTable());
+        }
+
+        return true;
+    }
+
+    /**
+     * EX-444/EX-445 : déclenche la synchronisation Scout d'un item, en
+     * invoquant le mécanisme natif du modèle hôte (`searchable()`) plutôt que
+     * de réimplémenter une quelconque logique d'indexation propre au
+     * plug-in — quel que soit le driver Scout configuré côté application
+     * hôte (y compris un no-op, ex. driver `database`). Renvoie `null` si le
+     * modèle n'utilise pas le trait Searchable (EX-447) ou si l'item
+     * n'existe pas (traduit en 404 par le contrôleur, même principe que
+     * restore()/forceDelete()) ; `withTrashed()` si le modèle utilise aussi
+     * SoftDeletes, pour rester cohérent avec find() qui reste accessible sur
+     * un item déjà soft-deleted (la fiche détail, seul endroit exposant
+     * cette action, l'affiche aussi bien pour un item actif que soft-deleted).
+     *
+     * @throws ItemReindexException
+     */
+    public function reindex(string $connection, string $model, string $id): ?bool
+    {
+        $class = $this->resolver->resolve($connection, $model);
+        $instance = new $class;
+
+        if (! ModelTraitInspector::uses($instance, Searchable::class)) {
+            return null;
+        }
+
+        $found = ModelTraitInspector::uses($instance, SoftDeletes::class)
+            ? $class::withTrashed()->find($id)
+            : $class::find($id);
+
+        if ($found === null) {
+            return null;
+        }
+
+        try {
+            $found->searchable();
+        } catch (Throwable $exception) {
+            throw new ItemReindexException($exception->getMessage());
         }
 
         return true;
