@@ -4,6 +4,7 @@ namespace Quatrebarbes\Modelbase\Support;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\QueryException;
 
 /**
@@ -32,17 +33,24 @@ class ItemRepository
 
     /**
      * @param  array<string, mixed>  $filters
+     * @param  string|null  $trashed  EX-438 : `null`/toute valeur autre que
+     *   'with'/'only' = comportement par défaut (exclusion des soft-deleted,
+     *   EX-437) ; 'with' = inclus en plus des items actifs ; 'only' = soft-
+     *   deleted exclusivement. Sans effet pour un modèle n'utilisant pas
+     *   SoftDeletes (EX-443).
      * @return array{data: array<int, array<string, mixed>>, meta: array{current_page: int, last_page: int, per_page: int, total: int}}
      *
      * @throws ItemFilterException
      */
-    public function paginate(string $connection, string $model, int $page, int $perPage, array $filters = [], ?string $sort = null): array
+    public function paginate(string $connection, string $model, int $page, int $perPage, array $filters = [], ?string $sort = null, ?string $trashed = null): array
     {
         $class = $this->resolver->resolve($connection, $model);
         $instance = new $class;
         $db = $instance->getConnection();
         $table = $instance->getTable();
         $keyName = $instance->getKeyName();
+        $usesSoftDeletes = ModelTraitInspector::uses($instance, SoftDeletes::class);
+        $deletedAtColumn = $usesSoftDeletes ? $instance->getDeletedAtColumn() : null;
 
         // Un modèle Eloquent déclaré peut ne correspondre à aucune table
         // réelle (ex. table pas encore migrée en prod) : traité comme un
@@ -58,11 +66,24 @@ class ItemRepository
                     'per_page' => $perPage,
                     'total' => 0,
                     'primary_key' => $keyName,
+                    'soft_deletes' => $usesSoftDeletes,
                 ],
             ];
         }
 
-        $query = $db->table($table);
+        // EX-437/EX-438 : withTrashed()/onlyTrashed() Eloquent natifs plutôt
+        // qu'une clause whereNull/whereNotNull maison sur la colonne de
+        // suppression — toBase() ramène la requête au query builder brut déjà
+        // utilisé par le reste de cette méthode (mêmes lignes stdClass en
+        // retour), sans introduire de second mécanisme de construction de
+        // requête parallèle à celui d'ItemQueryFilter ci-dessous.
+        $query = $usesSoftDeletes
+            ? (match ($trashed) {
+                'with' => $instance->newQuery()->withTrashed(),
+                'only' => $instance->newQuery()->onlyTrashed(),
+                default => $instance->newQuery(),
+            })->toBase()
+            : $db->table($table);
 
         if ($filters !== [] || ($sort !== null && $sort !== '')) {
             // EX-432 : colonnes de filtre/tri restreintes à celles exposées
@@ -83,7 +104,15 @@ class ItemRepository
         $paginator = $query->paginate($perPage, ['*'], 'page', max(1, $page));
 
         return [
-            'data' => collect($paginator->items())->map(fn ($row) => (array) $row)->all(),
+            'data' => collect($paginator->items())->map(function ($row) use ($deletedAtColumn) {
+                $row = (array) $row;
+                // EX-439 : indicateur dédié, calculé plutôt que renvoyé tel
+                // quel — toujours `false` pour un modèle sans SoftDeletes
+                // ($deletedAtColumn vaut alors `null`, EX-443).
+                $row['is_trashed'] = $deletedAtColumn !== null && ($row[$deletedAtColumn] ?? null) !== null;
+
+                return $row;
+            })->all(),
             'meta' => [
                 'current_page' => $paginator->currentPage(),
                 'last_page' => $paginator->lastPage(),
@@ -97,12 +126,26 @@ class ItemRepository
                 // listing (le dictionnaire brut de colonnes ci-dessus ne
                 // renseigne pas laquelle est la clé).
                 'primary_key' => $keyName,
+                // EX-443 : indique au front si le filtre « avec/uniquement
+                // supprimés » (EX-438) a un sens pour ce modèle.
+                'soft_deletes' => $usesSoftDeletes,
             ],
         ];
     }
 
     /**
-     * @return array{id: mixed, values: array<int, array<string, mixed>>}|null
+     * EX-439 : `find()` s'appuie sur le query builder brut (pas d'instance
+     * Eloquent, cf. en-tête de classe), donc n'applique déjà aucun scope
+     * global — un item soft-deleted y reste visible sans changement, seul le
+     * champ `is_trashed` est ajouté pour le signaler côté front. `soft_deletes`
+     * (même nom que `meta.soft_deletes` du listing) indique si le modèle
+     * utilise SoftDeletes, indépendamment du statut de cet item précis — le
+     * front en a besoin *avant* toute suppression pour savoir si le bouton
+     * « Supprimer » (EX-418) va réellement supprimer l'item ou seulement le
+     * soft-delete, et adapter le message de confirmation (EX-419) en
+     * conséquence.
+     *
+     * @return array{id: mixed, is_trashed: bool, soft_deletes: bool, values: array<int, array<string, mixed>>}|null
      */
     public function find(string $connection, string $model, string $id): ?array
     {
@@ -112,6 +155,7 @@ class ItemRepository
         $table = $instance->getTable();
         $key = $instance->getKeyName();
         $technical = $this->technicalColumns($instance);
+        $deletedAtColumn = $this->deletedAtColumn($instance);
 
         if (! $db->getSchemaBuilder()->hasTable($table)) {
             return null;
@@ -127,11 +171,81 @@ class ItemRepository
 
         return [
             'id' => $row[$key],
+            'is_trashed' => $deletedAtColumn !== null && ($row[$deletedAtColumn] ?? null) !== null,
+            'soft_deletes' => $deletedAtColumn !== null,
             'values' => collect($this->columnsFor($connection, $instance))
                 ->map(fn (array $column) => $this->decorate($db, $connection, $column, $row[$column['name']] ?? null, $technical, $instance))
                 ->values()
                 ->all(),
         ];
+    }
+
+    /**
+     * EX-440 : restaure un item soft-deleted (annule sa suppression) via
+     * l'instance Eloquent réelle (`restore()`) pour déclencher restoring/
+     * restored. Renvoie `null` si le modèle n'utilise pas SoftDeletes
+     * (EX-443) ou si l'item n'existe pas (traduit en 404 par le contrôleur,
+     * même principe que delete()) — `withTrashed()` est nécessaire pour
+     * retrouver un item par ailleurs masqué par le scope global de
+     * SoftDeletingScope.
+     *
+     * @return array{id: mixed, is_trashed: bool, values: array<int, array<string, mixed>>}|null
+     */
+    public function restore(string $connection, string $model, string $id): ?array
+    {
+        $class = $this->resolver->resolve($connection, $model);
+        $instance = new $class;
+
+        if (! ModelTraitInspector::uses($instance, SoftDeletes::class)) {
+            return null;
+        }
+
+        $found = $class::withTrashed()->find($id);
+
+        if ($found === null) {
+            return null;
+        }
+
+        $found->restore();
+
+        return $this->find($connection, $model, $id);
+    }
+
+    /**
+     * EX-441 : supprime définitivement (suppression physique) un item déjà
+     * soft-deleted, via l'instance Eloquent réelle (`forceDelete()`) pour
+     * déclencher forceDeleting/forceDeleted — distincte de delete() (EX-418),
+     * qui pour un modèle SoftDeletes ne fait qu'une suppression douce (cf.
+     * Phase 4d). Renvoie `false` si le modèle n'utilise pas SoftDeletes
+     * (EX-443) ou si l'item n'existe pas. Même absence de suppression forcée
+     * qu'EX-420 : une contrainte de clé étrangère entrante bloquant cette
+     * suppression physique est traduite en ItemDeletionException plutôt que
+     * contournée.
+     *
+     * @throws ItemDeletionException
+     */
+    public function forceDelete(string $connection, string $model, string $id): bool
+    {
+        $class = $this->resolver->resolve($connection, $model);
+        $instance = new $class;
+
+        if (! ModelTraitInspector::uses($instance, SoftDeletes::class)) {
+            return false;
+        }
+
+        $found = $class::withTrashed()->find($id);
+
+        if ($found === null) {
+            return false;
+        }
+
+        try {
+            $found->forceDelete();
+        } catch (QueryException $exception) {
+            throw $this->toDeletionException($exception, $found->getConnection(), $found->getTable());
+        }
+
+        return true;
     }
 
     /**
@@ -382,7 +496,22 @@ class ItemRepository
             $technical[] = $instance->getUpdatedAtColumn();
         }
 
+        $deletedAtColumn = $this->deletedAtColumn($instance);
+
+        if ($deletedAtColumn !== null) {
+            $technical[] = $deletedAtColumn;
+        }
+
         return $technical;
+    }
+
+    /**
+     * EX-439 : nom de la colonne de suppression douce, seulement pour un
+     * modèle utilisant SoftDeletes — `null` sinon (EX-443).
+     */
+    private function deletedAtColumn(Model $instance): ?string
+    {
+        return ModelTraitInspector::uses($instance, SoftDeletes::class) ? $instance->getDeletedAtColumn() : null;
     }
 
     /**

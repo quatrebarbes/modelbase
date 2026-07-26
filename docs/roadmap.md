@@ -1,6 +1,6 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-26 (Phase 11 développée et testée — filtrage et tri du listing d'items).
+Dernière mise à jour : 2026-07-26 (Phase 12 développée et testée — gestion des items soft-deleted).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
@@ -39,7 +39,7 @@ Les exigences EX-437 à EX-447 (module 4 — gestion des items soft-deleted, mis
 | 9     | Relations entre modèles        | ✅ fait    |
 | 10    | Compatibilité Laravel 11/12/13 | ✅ fait    |
 | 11    | Filtrage et tri des items      | ✅ fait    |
-| 12    | Items soft-deleted             | ⬜ à faire |
+| 12    | Items soft-deleted             | ✅ fait    |
 | 13    | Cache Scout à la demande       | ⬜ à faire |
 
 ---
@@ -297,21 +297,24 @@ Points d'attention :
 
 ## Phase 12 — Items : gestion des items soft-deleted (module 4, EX-437 à EX-443)
 
-- [ ] Détection du trait Eloquent `SoftDeletes` sur le modèle hôte — réutilisation du mécanisme de réflexion déjà en place (`Support\RelationMethodDenylist`, Phase 9, qui gère déjà `SoftDeletes` pour son propre denylist) plutôt qu'une nouvelle détection ad hoc
-- [ ] Listing standard : exclusion par défaut des items soft-deleted pour un modèle `SoftDeletes` (EX-437)
-- [ ] Paramètre de filtre listing « avec supprimés » / « supprimés uniquement » (EX-438) — `withTrashed()`/`onlyTrashed()` Eloquent natifs plutôt qu'une clause `whereNull`/`whereNotNull` maison sur la colonne de suppression
-- [ ] Indicateur visuel dédié sur un item soft-deleted, dans le listing et sur la fiche détail (EX-439) — nouveau champ `is_trashed` sur la ligne d'item et sur la fiche détail (cf. `Item.isTrashed` du modèle de données SFD)
-- [ ] Action de restauration depuis la fiche détail d'un item soft-deleted (EX-440) — `restore()` Eloquent, cohérent avec EX-424 (événements `restoring`/`restored`)
-- [ ] Action de suppression définitive (physique), distincte de la suppression standard (EX-418/EX-420), proposée uniquement sur un item déjà soft-deleted (EX-441) — `forceDelete()` Eloquent
-- [ ] Confirmation supplémentaire dédiée avant toute suppression définitive, en plus de la confirmation déjà requise pour la suppression standard (EX-442)
-- [ ] Modèle n'utilisant pas `SoftDeletes` : aucune de ces fonctions (filtre, indicateur, restauration, suppression définitive) n'est proposée ; la suppression standard y reste physique et immédiate, comportement déjà acquis en Phase 4c (EX-443)
-- Tests Feature à écrire : listing exclut les soft-deleted par défaut, filtre « avec supprimés »/« supprimés uniquement », restauration, suppression définitive, confirmation requise, modèle sans `SoftDeletes` non affecté (comportement Phase 4c inchangé)
-- Tests Unit à écrire : détection du trait `SoftDeletes`, construction de la requête filtrée par visibilité des soft-deleted
+- [x] Détection du trait Eloquent `SoftDeletes` sur le modèle hôte — `Support\ModelTraitInspector::uses()` (nouveau), générique (`class_uses_recursive()`) plutôt que dédié à `SoftDeletes` : réutilisable telle quelle pour la détection de `Searchable` en Phase 13, sans dupliquer une détection ad hoc par trait
+- [x] Listing standard : exclusion par défaut des items soft-deleted pour un modèle `SoftDeletes` (EX-437) — `ItemRepository::paginate()`
+- [x] Paramètre de filtre listing « avec supprimés » / « supprimés uniquement » (EX-438) — query param `trashed=with`/`trashed=only` (défaut : exclus) ; `withTrashed()`/`onlyTrashed()` Eloquent natifs plutôt qu'une clause `whereNull`/`whereNotNull` maison, cf. point d'attention ci-dessous
+- [x] Indicateur visuel dédié sur un item soft-deleted, dans le listing et sur la fiche détail (EX-439) — champ `is_trashed` sur chaque ligne du listing et sur la fiche détail, toujours `false` pour un modèle sans `SoftDeletes` (EX-443)
+- [x] Action de restauration depuis la fiche détail d'un item soft-deleted (EX-440) — `POST .../items/{id}/restore`, `ItemRepository::restore()` via `withTrashed()->find()` + `restore()` Eloquent (événements `restoring`/`restored`, cohérent avec EX-424)
+- [x] Action de suppression définitive (physique), distincte de la suppression standard (EX-418/EX-420), proposée uniquement sur un item déjà soft-deleted (EX-441) — `DELETE .../items/{id}/force`, `ItemRepository::forceDelete()` via `forceDelete()` Eloquent ; même protection qu'EX-420 (contrainte de clé étrangère entrante traduite en 409, jamais forcée) ; la restriction « uniquement sur un item déjà soft-deleted » est une règle d'affichage du front (bouton visible seulement si `is_trashed`), pas une contrainte du repository lui-même
+- [x] Confirmation supplémentaire dédiée avant toute suppression définitive, en plus de la confirmation déjà requise pour la suppression standard (EX-442) — `window.confirm()` dédié dans `handleForceDelete()`, message distinct de celui de la suppression standard
+- [x] Modèle n'utilisant pas `SoftDeletes` : aucune de ces fonctions (filtre, indicateur, restauration, suppression définitive) n'est proposée ; la suppression standard y reste physique et immédiate, comportement déjà acquis en Phase 4c (EX-443)
+- Tests Feature : `tests/Feature/ItemSoftDeleteTest.php` (listing exclut les soft-deleted par défaut, `trashed=with`/`trashed=only`, indicateur `is_trashed` listing/détail, restauration, suppression définitive, 404 sur item/modèle non applicable, 409 sur suppression définitive bloquée par une clé étrangère entrante, modèle sans `SoftDeletes` non affecté)
+- Tests Unit : `tests/Unit/ModelTraitInspectorTest.php` (détection du trait), `tests/Unit/ItemRepositoryTest.php` complété (listing filtré par visibilité, `is_trashed` par ligne et en détail, colonne `deleted_at` technique, `restore()`/`forceDelete()` y compris événements Eloquent et modèle sans `SoftDeletes`)
 
-Points d'attention identifiés en amont (à vérifier à l'implémentation) :
-- **Limite SFD explicite** : le filtre soft-deleted et les actions de restauration/suppression définitive ne s'appliquent qu'au listing standard et à la fiche détail d'un item, jamais aux tableaux d'objets liés (EX-425 à EX-431) — ceux-ci continuent d'afficher les objets liés tels que renvoyés par la relation Eloquent, sans filtre de visibilité dédié.
-- **Interaction avec EX-424 (Phase 4d)** : `ItemRepository::delete()` passe déjà par une instance Eloquent réelle — un modèle `SoftDeletes` y bénéficie donc déjà d'une suppression douce plutôt que physique par simple effet de bord (déjà noté en Phase 4d) ; cette phase formalise ce comportement côté API/front (indicateur, filtre) plutôt que de changer la mécanique de suppression elle-même.
-- **Interaction avec la Phase 11** : le paramètre de filtre soft-deleted vient s'ajouter aux paramètres de filtre/tri par colonne du même endpoint de listing — à concevoir ensemble pour éviter deux mécanismes de query-building parallèles sur `ItemRepository::paginate()`.
+Points d'attention :
+- **`toBase()` plutôt qu'un second mécanisme de query-building (Phase 11)** : `paginate()` restait sur le query builder brut (`DB::table()`) pour la lecture des lignes (Phase 4d) — passer par `withTrashed()`/`onlyTrashed()` Eloquent (natifs, comme prévu ci-dessus) exigeait donc de construire la requête via une instance Eloquent (`$instance->newQuery()`), puis de revenir au query builder brut via `->toBase()` avant d'appliquer `ItemQueryFilter` (Phase 11) et de paginer — évite d'avoir deux mécanismes de construction de requête parallèles sur le même endpoint, et ne change rien pour un modèle sans `SoftDeletes` (branche `$db->table($table)` inchangée).
+- **`deleted_at` traitée comme colonne technique (EX-416)** : ajoutée à `ItemRepository::technicalColumns()` pour un modèle `SoftDeletes`, au même titre que la clé primaire et les timestamps — en lecture seule dans le formulaire, cohérent avec le fait qu'elle est de toute façon déjà auto-castée par le trait (`initializeSoftDeletes()`) donc déjà exposée par `columnsFor()` (EX-422) même sans cet ajout.
+- **404 unique pour « item introuvable » et « modèle non applicable »** : `restore()`/`forceDelete()` renvoient `null`/`false` aussi bien pour un item inconnu que pour un modèle n'utilisant pas `SoftDeletes` — le contrôleur traduit les deux cas en 404, sans endpoint de garde séparé (EX-443 étant de toute façon une règle d'affichage du front, ces routes ne sont normalement jamais atteintes pour un modèle non éligible).
+- **`find()` (détail) restait déjà transparent aux items soft-deleted avant cette phase** : utilisant le query builder brut (pas d'instance Eloquent, donc aucun scope global appliqué), il n'a jamais eu besoin d'un `withTrashed()` explicite — seul le champ `is_trashed` a été ajouté à sa réponse. À l'inverse, `update()`/`delete()` (Phase 4d) passent par `$class::find()` (scope global actif) : un item déjà soft-deleted n'y est donc plus modifiable/re-supprimable par les endpoints standards, seuls `restore()`/`forceDelete()` (`withTrashed()->find()`) y accèdent — cohérent avec le fait que le front bascule vers ces deux actions dédiées dès qu'un item est `is_trashed`.
+- **Limite SFD explicite** : le filtre soft-deleted et les actions de restauration/suppression définitive ne s'appliquent qu'au listing standard et à la fiche détail d'un item, jamais aux tableaux d'objets liés (EX-425 à EX-431) — inchangés, ceux-ci continuent d'afficher les objets liés tels que renvoyés par la relation Eloquent.
+- **Vérifié manuellement contre l'environnement `docker-compose` réel (mysql)**, pas seulement via les tests sqlite : `demo/app/Models/Product.php` utilise désormais `SoftDeletes` (`demo/database/migrations/..._create_products_table.php` complétée d'un `$table->softDeletes()`) pour disposer d'un modèle de démo réel — `GET /connections/mysql/models/Product/items` confirme `meta.soft_deletes: true` et `is_trashed: false` sur les 20 produits seedés ; `ItemRepository::delete()` (soft-delete via l'instance Eloquent réelle, Phase 4d) puis `paginate(..., trashed: 'only')`/`restore()` confirment respectivement l'exclusion par défaut, le filtre `only`/`with`, et la restauration (vérifiés via `php artisan tinker` sur le conteneur `modelbase-app`, la vérification bout-en-bout via un navigateur réel restant hors de portée de cet environnement, cf. limite déjà documentée Phases 6/7/8/9/11). Données de démo remises dans leur état initial (20 produits, aucun soft-deleted) après ce test manuel.
 
 ## Phase 13 — Items : mise à jour à la demande du cache Scout (module 4, EX-444 à EX-447)
 

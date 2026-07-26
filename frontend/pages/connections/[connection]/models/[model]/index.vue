@@ -25,6 +25,9 @@ function parseInitialFilters(): Record<string, string> {
 const page = ref(route.query.page ? Number(route.query.page) : 1)
 const sort = ref(typeof route.query.sort === 'string' ? route.query.sort : '')
 const filters = ref<Record<string, string>>(parseInitialFilters())
+// EX-438 : '' (défaut, items actifs uniquement), 'with' ou 'only'.
+const trashed = ref(typeof route.query.trashed === 'string' ? route.query.trashed : '')
+watch(trashed, () => { page.value = 1 })
 // Filtres texte débounced (300 ms) pour ne pas relancer une requête à chaque
 // caractère tapé, même pattern que connections/[connection]/index.vue.
 const debouncedFilters = ref<Record<string, string>>({ ...filters.value })
@@ -45,6 +48,7 @@ const queryParams = computed(() => {
   const query: Record<string, string | number> = { page: page.value, per_page: perPage }
 
   if (sort.value) query.sort = sort.value
+  if (trashed.value) query.trashed = trashed.value
 
   for (const [column, value] of Object.entries(debouncedFilters.value)) {
     query[`filter[${column}]`] = value
@@ -71,6 +75,9 @@ const { data: columnsData } = await useAsyncData(
 const items = computed(() => data.value?.data ?? [])
 const meta = computed(() => data.value?.meta)
 const columns = computed(() => columnsData.value?.data ?? [])
+// EX-443 : le filtre « avec/uniquement supprimés » n'est proposé que pour un
+// modèle utilisant SoftDeletes.
+const softDeletes = computed(() => meta.value?.soft_deletes ?? false)
 
 // EX-306 : accès au diagramme des relations depuis le listing des items.
 const showDiagram = ref(false)
@@ -104,14 +111,22 @@ useHead({ title: t('items.title', { model }) })
           {{ $t('relations.showDiagram') }}
         </button>
       </div>
-      <button
-        v-if="itemListRef?.hasActiveFilterOrSort"
-        type="button"
-        class="btn"
-        @click="itemListRef?.clearFiltersAndSort()"
-      >
-        {{ $t('items.clearFiltersAndSorts') }}
-      </button>
+      <div class="toolbar__actions">
+        <button
+          v-if="itemListRef?.hasActiveFilterOrSort"
+          type="button"
+          class="btn"
+          @click="itemListRef?.clearFiltersAndSort()"
+        >
+          {{ $t('items.clearFiltersAndSorts') }}
+        </button>
+        <!-- EX-438 : filtre d'affichage des items soft-deleted, uniquement pour un modèle SoftDeletes (EX-443) -->
+        <select v-if="softDeletes" v-model="trashed" :aria-label="$t('items.trashedFilterLabel')" class="btn">
+          <option value="">{{ $t('items.trashedFilterActiveOnly') }}</option>
+          <option value="with">{{ $t('items.trashedFilterWithTrashed') }}</option>
+          <option value="only">{{ $t('items.trashedFilterOnlyTrashed') }}</option>
+        </select>
+      </div>
     </div>
     <RelationDiagram
       v-if="showDiagram"

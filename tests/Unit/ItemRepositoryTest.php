@@ -75,6 +75,26 @@ class ItemRepositoryTest extends TestCase
         // Table 'ghosts' volontairement non créée : modèle déclaré côté hôte
         // dont la table n'existe pas réellement (ex. jamais migrée en prod).
         $this->putModel('RepoGhost', 'ghosts', ['name']);
+
+        // Phase 12 (EX-437 à EX-443) : table et modèle dédiés utilisant
+        // SoftDeletes, distincts de 'products'/'RepoProduct' ci-dessus pour ne
+        // pas affecter les fixtures déjà en place — un item actif (id 1) et un
+        // item déjà soft-deleted (id 2, `deleted_at` renseigné directement en
+        // base plutôt que via delete(), pour ne pas dépendre du comportement
+        // testé par ailleurs, cf. ItemEventTest/Phase 4d).
+        Schema::connection('primary')->create('archivable_products', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        DB::connection('primary')->table('archivable_products')->insert([
+            ['id' => 1, 'name' => 'Active', 'created_at' => now(), 'updated_at' => now(), 'deleted_at' => null],
+            ['id' => 2, 'name' => 'Trashed', 'created_at' => now(), 'updated_at' => now(), 'deleted_at' => now()],
+        ]);
+
+        $this->putArchivableModel();
     }
 
     protected function tearDown(): void
@@ -156,6 +176,41 @@ class ItemRepositoryTest extends TestCase
     private function productClass(): string
     {
         return app()->getNamespace().'Models\\RepoProduct';
+    }
+
+    /**
+     * EX-437 à EX-443 : modèle de test utilisant SoftDeletes.
+     */
+    private function putArchivableModel(): void
+    {
+        $namespace = app()->getNamespace();
+
+        File::put(app_path('Models/RepoArchivableProduct.php'), <<<PHP
+        <?php
+
+        namespace {$namespace}Models;
+
+        use Illuminate\Database\Eloquent\Model;
+        use Illuminate\Database\Eloquent\SoftDeletes;
+
+        class RepoArchivableProduct extends Model
+        {
+            use SoftDeletes;
+
+            protected \$connection = 'primary';
+
+            protected \$table = 'archivable_products';
+
+            protected \$fillable = ['name'];
+        }
+        PHP);
+
+        require_once app_path('Models/RepoArchivableProduct.php');
+    }
+
+    private function archivableClass(): string
+    {
+        return app()->getNamespace().'Models\\RepoArchivableProduct';
     }
 
     private function repository(): ItemRepository
@@ -597,5 +652,205 @@ class ItemRepositoryTest extends TestCase
 
         Event::assertDispatched('eloquent.deleting: '.$this->productClass());
         Event::assertDispatched('eloquent.deleted: '.$this->productClass());
+    }
+
+    /**
+     * EX-437 : le listing standard exclut par défaut les items soft-deleted.
+     */
+    public function test_paginate_excludes_soft_deleted_items_by_default(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoArchivableProduct', 1, 15);
+
+        $this->assertSame(['Active'], collect($page['data'])->pluck('name')->all());
+        $this->assertTrue($page['meta']['soft_deletes']);
+    }
+
+    /**
+     * EX-438 : `trashed=with` ajoute les items soft-deleted aux items actifs.
+     */
+    public function test_paginate_includes_soft_deleted_items_when_trashed_is_with(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoArchivableProduct', 1, 15, [], null, 'with');
+
+        $this->assertSame(['Active', 'Trashed'], collect($page['data'])->pluck('name')->all());
+    }
+
+    /**
+     * EX-438 : `trashed=only` restreint le listing aux items soft-deleted.
+     */
+    public function test_paginate_returns_only_soft_deleted_items_when_trashed_is_only(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoArchivableProduct', 1, 15, [], null, 'only');
+
+        $this->assertSame(['Trashed'], collect($page['data'])->pluck('name')->all());
+    }
+
+    /**
+     * EX-439 : indicateur `is_trashed` par ligne du listing.
+     */
+    public function test_paginate_flags_is_trashed_per_row(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoArchivableProduct', 1, 15, [], null, 'with');
+        $rows = collect($page['data'])->keyBy('name');
+
+        $this->assertFalse($rows['Active']['is_trashed']);
+        $this->assertTrue($rows['Trashed']['is_trashed']);
+    }
+
+    /**
+     * EX-443 : ni le filtre `trashed`, ni `meta.soft_deletes` n'ont d'effet
+     * pour un modèle n'utilisant pas SoftDeletes.
+     */
+    public function test_paginate_ignores_the_trashed_param_for_a_model_without_soft_deletes(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoProduct', 1, 15, [], null, 'only');
+
+        $this->assertFalse($page['meta']['soft_deletes']);
+        $this->assertSame(2, $page['meta']['total']);
+    }
+
+    public function test_find_flags_a_soft_deleted_item_as_trashed(): void
+    {
+        $item = $this->repository()->find('primary', 'RepoArchivableProduct', '2');
+
+        $this->assertTrue($item['is_trashed']);
+    }
+
+    public function test_find_flags_an_active_item_as_not_trashed(): void
+    {
+        $item = $this->repository()->find('primary', 'RepoArchivableProduct', '1');
+
+        $this->assertFalse($item['is_trashed']);
+    }
+
+    /**
+     * EX-443 : `is_trashed` vaut toujours `false` pour un modèle sans
+     * SoftDeletes.
+     */
+    public function test_find_always_flags_is_trashed_false_for_a_model_without_soft_deletes(): void
+    {
+        $item = $this->repository()->find('primary', 'RepoProduct', '1');
+
+        $this->assertFalse($item['is_trashed']);
+    }
+
+    /**
+     * `soft_deletes` renseigne si le modèle gère SoftDeletes indépendamment du
+     * statut de l'item consulté — nécessaire côté front pour adapter le
+     * message de confirmation avant une suppression standard (EX-419) qui,
+     * pour ce modèle, ne fera qu'un soft-delete plutôt qu'une suppression
+     * physique.
+     */
+    public function test_find_flags_soft_deletes_support_regardless_of_the_items_own_status(): void
+    {
+        $active = $this->repository()->find('primary', 'RepoArchivableProduct', '1');
+        $trashed = $this->repository()->find('primary', 'RepoArchivableProduct', '2');
+
+        $this->assertTrue($active['soft_deletes']);
+        $this->assertTrue($trashed['soft_deletes']);
+    }
+
+    public function test_find_flags_soft_deletes_as_false_for_a_model_without_soft_deletes(): void
+    {
+        $item = $this->repository()->find('primary', 'RepoProduct', '1');
+
+        $this->assertFalse($item['soft_deletes']);
+    }
+
+    /**
+     * EX-416/EX-439 : `deleted_at` est traitée comme une colonne technique en
+     * lecture seule, au même titre que la clé primaire et les timestamps.
+     */
+    public function test_columns_flags_the_deleted_at_column_as_technical(): void
+    {
+        $columns = collect($this->repository()->columns('primary', 'RepoArchivableProduct'))->keyBy('column');
+
+        $this->assertTrue($columns['deleted_at']['technical']);
+    }
+
+    /**
+     * EX-440 : restauration d'un item soft-deleted.
+     */
+    public function test_restore_undoes_the_soft_deletion_of_an_item(): void
+    {
+        $restored = $this->repository()->restore('primary', 'RepoArchivableProduct', '2');
+
+        $this->assertFalse($restored['is_trashed']);
+        $this->assertTrue(
+            DB::connection('primary')->table('archivable_products')->where('id', 2)->whereNull('deleted_at')->exists()
+        );
+    }
+
+    public function test_restore_fires_the_host_models_restoring_and_restored_events(): void
+    {
+        Event::fake();
+
+        $this->repository()->restore('primary', 'RepoArchivableProduct', '2');
+
+        Event::assertDispatched('eloquent.restoring: '.$this->archivableClass());
+        Event::assertDispatched('eloquent.restored: '.$this->archivableClass());
+    }
+
+    public function test_restore_returns_null_for_an_unknown_item(): void
+    {
+        $this->assertNull($this->repository()->restore('primary', 'RepoArchivableProduct', '404'));
+    }
+
+    /**
+     * EX-443 : l'action de restauration n'est pas applicable à un modèle sans
+     * SoftDeletes.
+     */
+    public function test_restore_returns_null_for_a_model_without_soft_deletes(): void
+    {
+        $this->assertNull($this->repository()->restore('primary', 'RepoProduct', '1'));
+    }
+
+    /**
+     * EX-441 : suppression définitive (physique) d'un item soft-deleted.
+     */
+    public function test_force_delete_permanently_removes_a_soft_deleted_item(): void
+    {
+        $deleted = $this->repository()->forceDelete('primary', 'RepoArchivableProduct', '2');
+
+        $this->assertTrue($deleted);
+        $this->assertFalse(DB::connection('primary')->table('archivable_products')->where('id', 2)->exists());
+    }
+
+    /**
+     * La suppression définitive n'est pas réservée à un item déjà
+     * soft-deleted côté repository (la restriction « proposée uniquement sur
+     * un item déjà soft-deleted », EX-441, est une règle d'affichage côté
+     * front, cf. docs/roadmap.md Phase 12) : un item encore actif peut aussi
+     * être supprimé définitivement.
+     */
+    public function test_force_delete_can_also_remove_an_item_that_is_not_yet_trashed(): void
+    {
+        $deleted = $this->repository()->forceDelete('primary', 'RepoArchivableProduct', '1');
+
+        $this->assertTrue($deleted);
+    }
+
+    public function test_force_delete_fires_the_host_models_force_deleting_and_force_deleted_events(): void
+    {
+        Event::fake();
+
+        $this->repository()->forceDelete('primary', 'RepoArchivableProduct', '2');
+
+        Event::assertDispatched('eloquent.forceDeleting: '.$this->archivableClass());
+        Event::assertDispatched('eloquent.forceDeleted: '.$this->archivableClass());
+    }
+
+    public function test_force_delete_returns_false_for_an_unknown_item(): void
+    {
+        $this->assertFalse($this->repository()->forceDelete('primary', 'RepoArchivableProduct', '404'));
+    }
+
+    /**
+     * EX-443 : la suppression définitive n'est pas applicable à un modèle
+     * sans SoftDeletes.
+     */
+    public function test_force_delete_returns_false_for_a_model_without_soft_deletes(): void
+    {
+        $this->assertFalse($this->repository()->forceDelete('primary', 'RepoProduct', '1'));
     }
 }

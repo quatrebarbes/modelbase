@@ -34,7 +34,11 @@
     "filterPlaceholder": "Filtrer…",
     "sortAscending": "Tri croissant",
     "sortDescending": "Tri décroissant",
-    "clearFiltersAndSorts": "Effacer filtres & tris"
+    "clearFiltersAndSorts": "Effacer filtres & tris",
+    "trashedFilterLabel": "Filtre des items supprimés",
+    "trashedFilterActiveOnly": "Items actifs",
+    "trashedFilterWithTrashed": "Avec supprimés",
+    "trashedFilterOnlyTrashed": "Supprimés uniquement"
   },
   "itemDetail": {
     "title": "{model} — Item {item}",
@@ -47,10 +51,19 @@
     "edit": "Modifier",
     "delete": "Supprimer",
     "confirmDelete": "Supprimer définitivement cet item ?",
+    "confirmSoftDelete": "Supprimer cet item ?",
     "saved": "Modifications enregistrées.",
     "deleted": "Item supprimé.",
     "updateFailed": "La modification a échoué.",
-    "deleteFailed": "La suppression a échoué."
+    "deleteFailed": "La suppression a échoué.",
+    "trashedBadge": "Supprimé",
+    "restore": "Restaurer",
+    "restored": "Item restauré.",
+    "restoreFailed": "La restauration a échoué.",
+    "forceDelete": "Supprimer définitivement",
+    "confirmForceDelete": "Cette suppression est définitive et irréversible. Confirmer ?",
+    "forceDeleted": "Item supprimé définitivement.",
+    "forceDeleteFailed": "La suppression définitive a échoué."
   },
   "relations": {
     "showDiagram": "Voir les relations",

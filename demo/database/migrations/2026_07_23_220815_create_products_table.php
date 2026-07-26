@@ -19,6 +19,7 @@ return new class extends Migration
             $table->unsignedInteger('price_cents');
             $table->text('description')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
     }
 

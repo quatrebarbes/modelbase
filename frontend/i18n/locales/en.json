@@ -34,7 +34,11 @@
     "filterPlaceholder": "Filter…",
     "sortAscending": "Sort ascending",
     "sortDescending": "Sort descending",
-    "clearFiltersAndSorts": "Clear filters & sorts"
+    "clearFiltersAndSorts": "Clear filters & sorts",
+    "trashedFilterLabel": "Deleted items filter",
+    "trashedFilterActiveOnly": "Active items",
+    "trashedFilterWithTrashed": "With deleted",
+    "trashedFilterOnlyTrashed": "Deleted only"
   },
   "itemDetail": {
     "title": "{model} — Item {item}",
@@ -47,10 +51,19 @@
     "edit": "Edit",
     "delete": "Delete",
     "confirmDelete": "Permanently delete this item?",
+    "confirmSoftDelete": "Delete this item?",
     "saved": "Changes saved.",
     "deleted": "Item deleted.",
     "updateFailed": "The update failed.",
-    "deleteFailed": "The deletion failed."
+    "deleteFailed": "The deletion failed.",
+    "trashedBadge": "Deleted",
+    "restore": "Restore",
+    "restored": "Item restored.",
+    "restoreFailed": "The restoration failed.",
+    "forceDelete": "Delete permanently",
+    "confirmForceDelete": "This deletion is permanent and irreversible. Confirm?",
+    "forceDeleted": "Item permanently deleted.",
+    "forceDeleteFailed": "The permanent deletion failed."
   },
   "relations": {
     "showDiagram": "View relations",

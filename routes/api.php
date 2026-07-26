@@ -70,6 +70,15 @@ Route::prefix(config('modelbase.route_prefix').'/api')
                         Route::delete('/items/{item}', [ItemController::class, 'destroy'])
                             ->name('connections.models.items.destroy');
 
+                        // EX-440 : restauration d'un item soft-deleted.
+                        Route::post('/items/{item}/restore', [ItemController::class, 'restore'])
+                            ->name('connections.models.items.restore');
+
+                        // EX-441/EX-442 : suppression définitive (physique),
+                        // distincte de la suppression standard ci-dessus.
+                        Route::delete('/items/{item}/force', [ItemController::class, 'forceDestroy'])
+                            ->name('connections.models.items.force-destroy');
+
                         // EX-427/EX-428/EX-429/EX-430/EX-431 : listing paginé
                         // des objets liés d'une relation de cet item.
                         Route::get('/items/{item}/relations/{relation}', [RelationController::class, 'items'])

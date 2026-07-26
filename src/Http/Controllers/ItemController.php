@@ -11,6 +11,8 @@ use Illuminate\Routing\Controller;
 
 class ItemController extends Controller
 {
+    private const ITEM_NOT_FOUND = 'Item introuvable.';
+
     public function __construct(private ItemRepository $items)
     {
     }
@@ -22,6 +24,9 @@ class ItemController extends Controller
      * (ordre = priorité, EX-436), restreints aux colonnes exposées par
      * ItemRepository::columnsFor() — une colonne inconnue ou non exposée est
      * rejetée en 422, jamais tentée telle quelle dans une requête SQL.
+     * EX-437/EX-438 : `trashed=with`/`trashed=only` étend/restreint le
+     * listing aux items soft-deleted (sans effet pour un modèle n'utilisant
+     * pas SoftDeletes, EX-443).
      */
     public function index(Request $request, string $connection, string $model)
     {
@@ -29,9 +34,10 @@ class ItemController extends Controller
         $perPage = (int) $request->query('per_page', 15);
         $filters = (array) $request->query('filter', []);
         $sort = $request->query('sort');
+        $trashed = $request->query('trashed');
 
         try {
-            $result = $this->items->paginate($connection, $model, $page, max(1, $perPage), $filters, $sort);
+            $result = $this->items->paginate($connection, $model, $page, max(1, $perPage), $filters, $sort, $trashed);
         } catch (ItemFilterException $exception) {
             return response()->json(['message' => 'Filtre ou tri invalide.', 'errors' => $exception->errors()], 422);
         }
@@ -49,7 +55,7 @@ class ItemController extends Controller
         $found = $this->items->find($connection, $model, $item);
 
         if ($found === null) {
-            return response()->json(['message' => 'Item introuvable.'], 404);
+            return response()->json(['message' => self::ITEM_NOT_FOUND], 404);
         }
 
         return response()->json(['data' => $found]);
@@ -96,7 +102,7 @@ class ItemController extends Controller
         }
 
         if ($updated === null) {
-            return response()->json(['message' => 'Item introuvable.'], 404);
+            return response()->json(['message' => self::ITEM_NOT_FOUND], 404);
         }
 
         return response()->json(['data' => $updated]);
@@ -118,7 +124,47 @@ class ItemController extends Controller
         }
 
         if (! $deleted) {
-            return response()->json(['message' => 'Item introuvable.'], 404);
+            return response()->json(['message' => self::ITEM_NOT_FOUND], 404);
+        }
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * EX-440 : restauration d'un item soft-deleted. 404 aussi bien pour un
+     * item inconnu que pour un modèle n'utilisant pas SoftDeletes (EX-443,
+     * l'action n'étant de toute façon pas proposée par le front dans ce cas)
+     * — même principe que le reste du contrôleur, qui ne distingue pas ces
+     * deux cas de « ressource introuvable ».
+     */
+    public function restore(string $connection, string $model, string $item)
+    {
+        $restored = $this->items->restore($connection, $model, $item);
+
+        if ($restored === null) {
+            return response()->json(['message' => self::ITEM_NOT_FOUND], 404);
+        }
+
+        return response()->json(['data' => $restored]);
+    }
+
+    /**
+     * EX-441/EX-442 : suppression définitive (physique) d'un item déjà
+     * soft-deleted, distincte de destroy() (EX-418). La confirmation
+     * supplémentaire (EX-442) est de la responsabilité du front. Même
+     * traduction 409 que destroy() si une contrainte de clé étrangère
+     * entrante bloque cette suppression physique.
+     */
+    public function forceDestroy(string $connection, string $model, string $item)
+    {
+        try {
+            $deleted = $this->items->forceDelete($connection, $model, $item);
+        } catch (ItemDeletionException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 409);
+        }
+
+        if (! $deleted) {
+            return response()->json(['message' => self::ITEM_NOT_FOUND], 404);
         }
 
         return response()->json(null, 204);

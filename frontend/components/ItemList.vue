@@ -32,8 +32,12 @@ const sort = defineModel<string>('sort', { default: '' })
 // ligne, potentiellement plus large que le schéma exposé par /columns — les
 // en-têtes suivent donc les données réelles quand il y en a, et ne se
 // rabattent sur le schéma que pour un listing vide (sinon aucun en-tête
-// n'apparaîtrait pour construire les filtres).
-const rowColumns = computed(() => (props.items.length ? Object.keys(props.items[0]) : props.columns.map((c) => c.column)))
+// n'apparaîtrait pour construire les filtres). EX-439 : `is_trashed` est un
+// indicateur dédié (rendu à part, cf. tbody ci-dessous), pas une colonne du
+// modèle hôte.
+const rowColumns = computed(() => (
+  props.items.length ? Object.keys(props.items[0]).filter((c) => c !== 'is_trashed') : props.columns.map((c) => c.column)
+))
 
 const columnTypeByName = computed(() => Object.fromEntries(props.columns.map((c) => [c.column, c.type])))
 
@@ -157,10 +161,16 @@ defineExpose({ hasActiveFilterOrSort, clearFiltersAndSort })
           v-for="item in items"
           :key="String(keyOf(item))"
           tabindex="0"
+          class="item-list__row"
+          :class="{ 'item-list__row--trashed': item.is_trashed }"
           @click="goToItem(item)"
           @keydown.enter="goToItem(item)"
         >
-          <td v-for="column in rowColumns" :key="column">{{ item[column] }}</td>
+          <td v-for="column in rowColumns" :key="column">
+            <!-- EX-439 : indicateur visuel distinctif d'un item soft-deleted, porté par la colonne deleted_at elle-même -->
+            <span v-if="column === 'deleted_at' && item.is_trashed" class="item-list__trashed-date">{{ item[column] }}</span>
+            <template v-else>{{ item[column] }}</template>
+          </td>
         </tr>
       </tbody>
     </table>
@@ -184,6 +194,15 @@ defineExpose({ hasActiveFilterOrSort, clearFiltersAndSort })
 
 .item-list__sort-indicator {
   font-size: 0.75em;
+}
+
+.item-list__row--trashed {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.item-list__trashed-date {
+  color: var(--color-error-text);
 }
 
 .item-list__filter-input {
