@@ -87,6 +87,11 @@ class RelationRepository
                 'last_page' => $paginator->lastPage(),
                 'per_page' => $paginator->perPage(),
                 'total' => $paginator->total(),
+                // EX-428 : nom réel de la colonne de clé primaire du modèle
+                // lié — même besoin que ItemRepository::paginate() pour
+                // qu'une clé primaire non nommée `id` reste navigable depuis
+                // un tableau d'objets liés.
+                'primary_key' => $relation['related']->getKeyName(),
             ],
         ];
     }

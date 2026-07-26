@@ -70,6 +70,9 @@ class ItemRepositoryTest extends TestCase
         $this->putModel('RepoCategory', 'categories', ['name']);
         $this->putModel('RepoProduct', 'products', ['category_id', 'name', 'description'], ['internal_note' => 'string']);
         $this->putProductWithRelation();
+        // Table 'ghosts' volontairement non créée : modèle déclaré côté hôte
+        // dont la table n'existe pas réellement (ex. jamais migrée en prod).
+        $this->putModel('RepoGhost', 'ghosts', ['name']);
     }
 
     protected function tearDown(): void
@@ -170,6 +173,68 @@ class ItemRepositoryTest extends TestCase
         $this->assertSame(2, $page['meta']['last_page']);
     }
 
+    /**
+     * Un modèle hôte dont la clé primaire n'est pas `id` (`$primaryKey`)
+     * n'expose sinon, dans le dictionnaire brut de colonnes du listing, aucun
+     * moyen pour le front de savoir laquelle utiliser pour naviguer vers la
+     * fiche détail d'une ligne — `meta.primary_key` comble ce manque.
+     */
+    public function test_paginate_exposes_the_name_of_a_non_default_primary_key_column(): void
+    {
+        Schema::connection('primary')->create('tags', function (Blueprint $table) {
+            $table->string('wipsos_tag')->primary();
+            $table->string('label');
+        });
+
+        DB::connection('primary')->table('tags')->insert(['wipsos_tag' => 'promo', 'label' => 'Promo']);
+
+        $this->putTagModel();
+
+        $page = $this->repository()->paginate('primary', 'RepoTag', 1, 15);
+
+        $this->assertSame('wipsos_tag', $page['meta']['primary_key']);
+        $this->assertSame('promo', $page['data'][0]['wipsos_tag']);
+    }
+
+    public function test_paginate_exposes_the_default_primary_key_name_for_a_model_without_items(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoGhost', 1, 15);
+
+        $this->assertSame('id', $page['meta']['primary_key']);
+    }
+
+    private function putTagModel(): void
+    {
+        $namespace = app()->getNamespace();
+
+        File::put(app_path('Models/RepoTag.php'), <<<PHP
+        <?php
+
+        namespace {$namespace}Models;
+
+        use Illuminate\Database\Eloquent\Model;
+
+        class RepoTag extends Model
+        {
+            protected \$connection = 'primary';
+
+            protected \$table = 'tags';
+
+            protected \$primaryKey = 'wipsos_tag';
+
+            public \$incrementing = false;
+
+            protected \$keyType = 'string';
+
+            protected \$fillable = ['label'];
+
+            public \$timestamps = false;
+        }
+        PHP);
+
+        require_once app_path('Models/RepoTag.php');
+    }
+
     public function test_it_returns_no_items_without_error_for_an_empty_model(): void
     {
         DB::connection('primary')->table('products')->delete();
@@ -178,6 +243,24 @@ class ItemRepositoryTest extends TestCase
 
         $this->assertSame([], $page['data']);
         $this->assertSame(0, $page['meta']['total']);
+    }
+
+    public function test_it_paginates_without_error_for_a_model_whose_table_does_not_exist(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoGhost', 1, 15);
+
+        $this->assertSame([], $page['data']);
+        $this->assertSame(0, $page['meta']['total']);
+    }
+
+    public function test_columns_returns_no_columns_for_a_model_whose_table_does_not_exist(): void
+    {
+        $this->assertSame([], $this->repository()->columns('primary', 'RepoGhost'));
+    }
+
+    public function test_find_returns_null_for_a_model_whose_table_does_not_exist(): void
+    {
+        $this->assertNull($this->repository()->find('primary', 'RepoGhost', '1'));
     }
 
     public function test_find_returns_null_for_an_unknown_item(): void

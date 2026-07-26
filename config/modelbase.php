@@ -38,4 +38,18 @@ return [
     */
     'excluded_connections' => [],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Timeout de connexion (secondes)
+    |--------------------------------------------------------------------------
+    |
+    | Borne la tentative de connexion à chaud utilisée pour calculer le statut
+    | de disponibilité (module 2, EX-204/EX-208), pour les drivers qui
+    | exposent ce réglage (mysql/mariadb, sqlsrv). Évite qu'une connexion
+    | injoignable ne bloque l'affichage du listing sur le timeout par défaut,
+    | bien plus long, de l'OS ou du driver.
+    |
+    */
+    'connection_timeout' => env('MODELBASE_CONNECTION_TIMEOUT', 3),
+
 ];

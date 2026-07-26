@@ -44,6 +44,7 @@ class ModelRepositoryTest extends TestCase
 
         $this->putModel('Sprocket', 'widgets');
         $this->putModel('Gadget', 'cogs');
+        $this->putModel('Ghost', 'ghosts');
     }
 
     protected function tearDown(): void
@@ -110,6 +111,17 @@ class ModelRepositoryTest extends TestCase
 
         $names = collect($repository->forConnection('primary', ''))->pluck('name')->values()->all();
 
-        $this->assertCount(2, $names);
+        $this->assertCount(3, $names);
+    }
+
+    public function test_a_model_whose_table_does_not_exist_is_listed_with_zero_counts(): void
+    {
+        $repository = new ModelRepository(app(EloquentModelFinder::class));
+
+        $models = collect($repository->forConnection('primary'))->keyBy('name');
+
+        $this->assertSame('ghosts', $models['Ghost']['table']);
+        $this->assertSame(0, $models['Ghost']['item_count']);
+        $this->assertSame(0, $models['Ghost']['column_count']);
     }
 }

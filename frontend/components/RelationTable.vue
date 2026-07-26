@@ -41,10 +41,16 @@ const rows = computed<Array<Record<string, unknown>>>(() => data.value?.data ?? 
 const meta = computed(() => data.value?.meta)
 const columns = computed(() => (rows.value.length ? Object.keys(rows.value[0]) : []))
 
+// EX-428 : la colonne de clé primaire du modèle lié n'est pas forcément
+// nommée `id` (cf. `meta.primary_key`, ItemRepository::paginate()).
+function keyOf(row: Record<string, unknown>) {
+  return row[meta.value?.primary_key ?? 'id']
+}
+
 function goToRelatedItem(row: Record<string, unknown>) {
   // EX-428 : navigue vers la fiche détail de l'item lié, dans son propre
   // modèle (potentiellement une autre connexion que l'item courant).
-  navigateTo(`/connections/${props.relation.related_connection}/models/${props.relation.related_model}/items/${row.id}`)
+  navigateTo(`/connections/${props.relation.related_connection}/models/${props.relation.related_model}/items/${keyOf(row)}`)
 }
 </script>
 
@@ -72,7 +78,7 @@ function goToRelatedItem(row: Record<string, unknown>) {
         <tbody>
           <tr
             v-for="row in rows"
-            :key="String(row.id)"
+            :key="String(keyOf(row))"
             tabindex="0"
             @click="goToRelatedItem(row)"
             @keydown.enter="goToRelatedItem(row)"
@@ -91,10 +97,6 @@ function goToRelatedItem(row: Record<string, unknown>) {
 </template>
 
 <style scoped>
-.relation-table {
-  margin-top: 1.5rem;
-}
-
 .relation-table__unavailable {
   color: var(--color-text-muted);
   font-style: italic;

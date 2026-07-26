@@ -15,12 +15,12 @@ class FrontRoutingTest extends TestCase
     {
         parent::setUp();
 
-        File::ensureDirectoryExists(public_path('vendor/modelbase'));
+        File::ensureDirectoryExists(public_path('modelbase/app'));
     }
 
     protected function tearDown(): void
     {
-        File::deleteDirectory(public_path('vendor/modelbase'));
+        File::deleteDirectory(public_path('modelbase/app'));
 
         parent::tearDown();
     }
@@ -30,7 +30,7 @@ class FrontRoutingTest extends TestCase
         // Simule le résultat de `vendor:publish --tag=modelbase-assets`
         // (EX-106) sans dépendre d'un vrai build Nuxt dans les tests.
         File::put(
-            public_path('vendor/modelbase/index.html'),
+            public_path('modelbase/app/index.html'),
             '<html><body id="modelbase-spa">SPA shell</body></html>'
         );
     }

@@ -34,7 +34,23 @@ class ItemRepository
      */
     public function paginate(string $connection, string $model, int $page, int $perPage): array
     {
-        [$db, $table] = $this->tableFor($connection, $model);
+        [$db, $table, $keyName] = $this->tableFor($connection, $model);
+
+        // Un modèle Eloquent déclaré peut ne correspondre à aucune table
+        // réelle (ex. table pas encore migrée en prod) : traité comme un
+        // modèle sans item (EX-401/EX-403/EX-404), pas comme une erreur.
+        if (! $db->getSchemaBuilder()->hasTable($table)) {
+            return [
+                'data' => [],
+                'meta' => [
+                    'current_page' => max(1, $page),
+                    'last_page' => 1,
+                    'per_page' => $perPage,
+                    'total' => 0,
+                    'primary_key' => $keyName,
+                ],
+            ];
+        }
 
         $paginator = $db->table($table)->paginate($perPage, ['*'], 'page', max(1, $page));
 
@@ -45,6 +61,14 @@ class ItemRepository
                 'last_page' => $paginator->lastPage(),
                 'per_page' => $paginator->perPage(),
                 'total' => $paginator->total(),
+                // EX-401/EX-405 : nom réel de la colonne de clé primaire du
+                // modèle hôte (`$primaryKey`, EX-416) — un modèle dont la clé
+                // primaire n'est pas `id` (ex. `wipsos_tag`) resterait
+                // autrement sans moyen, côté front, de retrouver la colonne à
+                // utiliser pour naviguer vers la fiche détail d'une ligne du
+                // listing (le dictionnaire brut de colonnes ci-dessus ne
+                // renseigne pas laquelle est la clé).
+                'primary_key' => $keyName,
             ],
         ];
     }
@@ -60,6 +84,10 @@ class ItemRepository
         $table = $instance->getTable();
         $key = $instance->getKeyName();
         $technical = $this->technicalColumns($instance);
+
+        if (! $db->getSchemaBuilder()->hasTable($table)) {
+            return null;
+        }
 
         $row = $db->table($table)->where($key, $id)->first();
 
@@ -92,6 +120,10 @@ class ItemRepository
         $class = $this->resolver->resolve($connection, $model);
         $instance = new $class;
         $technical = $this->technicalColumns($instance);
+
+        if (! $instance->getConnection()->getSchemaBuilder()->hasTable($instance->getTable())) {
+            return [];
+        }
 
         return collect($this->columnsFor($connection, $instance))
             ->map(fn (array $column) => $this->describeColumn($connection, $column, $technical, $instance))
@@ -205,14 +237,14 @@ class ItemRepository
     }
 
     /**
-     * @return array{0: Connection, 1: string}
+     * @return array{0: Connection, 1: string, 2: string}
      */
     private function tableFor(string $connection, string $model): array
     {
         $class = $this->resolver->resolve($connection, $model);
         $instance = new $class;
 
-        return [$instance->getConnection(), $instance->getTable()];
+        return [$instance->getConnection(), $instance->getTable(), $instance->getKeyName()];
     }
 
     /**

@@ -1,16 +1,23 @@
 <script setup lang="ts">
 type ItemRow = Record<string, unknown>
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   connection: string
   model: string
   items: ItemRow[]
-}>()
+  primaryKey?: string
+}>(), {
+  primaryKey: 'id',
+})
 
 const columns = computed(() => (props.items.length ? Object.keys(props.items[0]) : []))
 
+function keyOf(item: ItemRow) {
+  return item[props.primaryKey]
+}
+
 function goToItem(item: ItemRow) {
-  navigateTo(`/connections/${props.connection}/models/${props.model}/items/${item.id}`)
+  navigateTo(`/connections/${props.connection}/models/${props.model}/items/${keyOf(item)}`)
 }
 </script>
 
@@ -27,7 +34,7 @@ function goToItem(item: ItemRow) {
       <!-- EX-405 : navigue vers la fiche détail de l'item sélectionné -->
       <tr
         v-for="item in items"
-        :key="String(item.id)"
+        :key="String(keyOf(item))"
         tabindex="0"
         @click="goToItem(item)"
         @keydown.enter="goToItem(item)"

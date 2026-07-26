@@ -19,3 +19,12 @@ Route::prefix(config('modelbase.route_prefix').'/app')
             ->where('any', '.*')
             ->name('modelbase.web.app');
     });
+
+// Confort : accéder au préfixe nu (sans le segment "app") redirige vers le
+// point d'entrée du SPA plutôt que de renvoyer une 404.
+Route::prefix(config('modelbase.route_prefix'))
+    ->middleware('web')
+    ->group(function () {
+        Route::redirect('/', '/'.config('modelbase.route_prefix').'/app')
+            ->name('modelbase.web.redirect');
+    });

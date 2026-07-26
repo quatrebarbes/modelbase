@@ -18,12 +18,20 @@ const { data } = await useAsyncData(
 )
 
 const options = computed(() => (data.value?.data ?? []) as Array<Record<string, unknown>>)
+// EX-415 : la colonne de clé primaire du modèle référencé n'est pas
+// forcément nommée `id` (cf. `meta.primary_key`, ItemRepository::paginate()).
+const primaryKey = computed(() => data.value?.meta?.primary_key ?? 'id')
+
+function keyOf(row: Record<string, unknown>): unknown {
+  return row[primaryKey.value]
+}
 
 function labelFor(row: Record<string, unknown>): string {
-  const previewKey = Object.keys(row).find((key) => key !== 'id')
+  const previewKey = Object.keys(row).find((key) => key !== primaryKey.value)
   const preview = previewKey ? row[previewKey] : undefined
+  const key = keyOf(row)
 
-  return preview !== undefined ? `#${row.id} — ${preview}` : `#${row.id}`
+  return preview !== undefined ? `#${key} — ${preview}` : `#${key}`
 }
 </script>
 
@@ -33,7 +41,7 @@ function labelFor(row: Record<string, unknown>): string {
     @change="$emit('update:modelValue', ($event.target as HTMLSelectElement).value || null)"
   >
     <option v-if="nullable" value="">—</option>
-    <option v-for="row in options" :key="String(row.id)" :value="String(row.id)">
+    <option v-for="row in options" :key="String(keyOf(row))" :value="String(keyOf(row))">
       {{ labelFor(row) }}
     </option>
   </select>

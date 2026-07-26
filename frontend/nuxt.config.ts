@@ -8,6 +8,7 @@
 // routes/web.php + SpaController) — un seul et même nuxt.config, sans
 // dupliquer la configuration entre les deux modes.
 const isPackageBuild = process.env.MODELBASE_PACKAGE_BUILD === 'true'
+const baseURL = isPackageBuild ? (process.env.NUXT_APP_BASE_URL ?? '/modelbase/app/') : '/'
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
@@ -18,10 +19,11 @@ export default defineNuxtConfig({
   app: {
     head: {
       titleTemplate: '%s — Modelbase',
+      link: [{ rel: 'icon', type: 'image/png', href: `${baseURL}favicon.png` }],
     },
     // EX-105 : servi par le plug-in sous {route_prefix}/app (routes/web.php).
     // Sans objet en dev/test (front à la racine de son propre conteneur).
-    baseURL: isPackageBuild ? (process.env.NUXT_APP_BASE_URL ?? '/modelbase/app/') : '/',
+    baseURL,
   },
 
   css: ['~/assets/css/main.css'],

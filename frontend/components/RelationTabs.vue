@@ -78,7 +78,6 @@ const activeRelation = computed(() => props.relations.find((relation) => relatio
   gap: 1.25rem;
   flex-wrap: wrap;
   border-bottom: 1px solid var(--color-border);
-  margin-bottom: 0.75rem;
 }
 
 /* Onglets « soulignés » plutôt que des pastilles pleines : un indicateur en

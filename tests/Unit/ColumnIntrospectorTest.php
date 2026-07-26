@@ -86,4 +86,51 @@ class ColumnIntrospectorTest extends TestCase
         $this->assertFalse($columns['name']['is_foreign_key']);
         $this->assertNull($columns['name']['foreign_key']);
     }
+
+    /**
+     * Régression : une relation `belongsTo` à clé composite (ex. déclarée via
+     * un package type Compoships) fait que getForeignKeyName() renvoie un
+     * array plutôt qu'un string — Eloquent n'impose aucun type sur ce
+     * paramètre, la relation se construit donc sans erreur. Une telle
+     * relation doit être ignorée par relationForeignKeys() (comme les FK de
+     * schéma composites via foreignKeyFor(), hors périmètre de ce module)
+     * plutôt que planter en l'utilisant comme clé de tableau (`Cannot access
+     * offset of type array on array`).
+     */
+    public function test_it_ignores_a_composite_relation_foreign_key(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            public function category(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+            {
+                // Un package type Compoships fournit sa propre sous-classe de
+                // BelongsTo dont addConstraints() sait gérer un array de
+                // colonnes ; on simule cette construction sans erreur ici via
+                // Relation::noConstraints(), la vanilla BelongsTo n'ayant pas
+                // cette prise en charge (qualifyColumn() plante sur un array).
+                return \Illuminate\Database\Eloquent\Relations\Relation::noConstraints(
+                    fn () => $this->belongsTo(ColumnIntrospectorTestCategory::class, ['category_id', 'name'], ['id', 'name'])
+                );
+            }
+        };
+
+        $relations = (new ColumnIntrospector)->relationForeignKeys($instance);
+
+        $this->assertSame([], $relations);
+    }
+}
+
+class ColumnIntrospectorTestCategory extends \Illuminate\Database\Eloquent\Model
+{
+    protected $connection = 'primary';
+
+    protected $table = 'categories';
+
+    public $timestamps = false;
 }

@@ -94,6 +94,12 @@ body {
   color: var(--color-text);
 }
 
+/* Le goût monospacique de l'auteur est certes discutable. J4B */
+body {
+  font-family: monospace;
+  margin: 8px;
+}
+
 /* Tableaux de listing (bases de données, modèles, items) */
 .data-table {
   width: 100%;
@@ -140,7 +146,6 @@ body {
   background: var(--color-pill-bg);
   color: var(--color-text);
   text-decoration: none;
-  font-size: 0.9rem;
   transition: color 0.15s ease;
 }
 
@@ -156,7 +161,6 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.9rem;
   min-width: 16rem;
   transition: border-color 0.15s ease;
 }
@@ -195,7 +199,6 @@ body {
   background: var(--color-pill-bg);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.9rem;
   text-decoration: none;
   cursor: pointer;
   transition: border-color 0.15s ease;

@@ -97,7 +97,18 @@ class ColumnIntrospector
                 continue;
             }
 
-            $relations[$relation->getForeignKeyName()] = [
+            $foreignKeyName = $relation->getForeignKeyName();
+
+            // Clé étrangère composite (ex. relation déclarée via un package
+            // type Compoships) : getForeignKeyName() renvoie alors un array
+            // de colonnes plutôt qu'un string — hors périmètre de ce module
+            // (cf. foreignKeyFor() ci-dessus, même règle pour les FK de
+            // relation que pour les FK de schéma).
+            if (! is_string($foreignKeyName)) {
+                continue;
+            }
+
+            $relations[$foreignKeyName] = [
                 'table' => $relation->getRelated()->getTable(),
                 'column' => $relation->getOwnerKeyName(),
             ];

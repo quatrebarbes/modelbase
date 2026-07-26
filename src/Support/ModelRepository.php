@@ -44,6 +44,19 @@ class ModelRepository
         $table = $instance->getTable();
         $connection = $instance->getConnection();
 
+        // Un modèle Eloquent déclaré peut ne correspondre à aucune table
+        // réelle (ex. table pas encore migrée en prod) : on l'affiche quand
+        // même (EX-301/EX-305 lisent le code, pas la base) avec des
+        // compteurs à 0 plutôt que de planter le listing entier.
+        if (! $connection->getSchemaBuilder()->hasTable($table)) {
+            return [
+                'name' => class_basename($class),
+                'table' => $table,
+                'item_count' => 0,
+                'column_count' => 0,
+            ];
+        }
+
         return [
             'name' => class_basename($class),
             'table' => $table,

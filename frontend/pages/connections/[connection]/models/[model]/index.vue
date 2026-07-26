@@ -55,7 +55,7 @@ useHead({ title: t('items.title', { model }) })
       :model="model"
       @close="showDiagram = false"
     />
-    <ItemList :connection="connection" :model="model" :items="items" />
+    <ItemList :connection="connection" :model="model" :items="items" :primary-key="meta?.primary_key" />
     <div v-if="meta && meta.total > 0" class="item-pagination-row">
       <ItemPagination v-model:page="page" :meta="meta" />
       <Spinner v-if="pending" />

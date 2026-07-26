@@ -195,7 +195,7 @@ class RelationRepositoryTest extends TestCase
         $finder = new EloquentModelFinder;
         $resolver = new ModelResolver($finder);
 
-        return new RelationRepository($resolver, new RelationIntrospector, new ConnectionAvailability);
+        return new RelationRepository($resolver, new RelationIntrospector, app(ConnectionAvailability::class));
     }
 
     public function test_for_model_lists_every_declared_relation(): void
@@ -244,6 +244,19 @@ class RelationRepositoryTest extends TestCase
         // 'siblings' inclut l'item lui-même (même category_id) : les 2 produits.
         $this->assertSame(2, $page['meta']['total']);
         $this->assertCount(2, $page['data']);
+    }
+
+    /**
+     * EX-428 : même besoin que `ItemRepository::paginate()` — la colonne de
+     * clé primaire du modèle lié doit être connue du front pour naviguer vers
+     * la fiche détail d'une ligne du tableau d'objets liés, même quand elle
+     * n'est pas nommée `id`.
+     */
+    public function test_paginate_related_exposes_the_related_models_primary_key_name(): void
+    {
+        $page = $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'siblings', 1, 15);
+
+        $this->assertSame('id', $page['meta']['primary_key']);
     }
 
     /**
