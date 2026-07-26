@@ -56,6 +56,8 @@ class ColumnIntrospectorTest extends TestCase
 
     public function test_it_maps_scalar_column_types(): void
     {
+        $this->skipUnlessSqliteSupportsNativeJson();
+
         $columns = $this->describeProducts();
 
         $this->assertSame(ColumnType::STRING->value, $columns['name']['type']);

@@ -342,6 +342,8 @@ class ItemMutationTest extends TestCase
 
     public function test_it_encodes_an_array_value_as_json_for_a_json_column_on_create(): void
     {
+        $this->skipUnlessSqliteSupportsNativeJson();
+
         $user = UserFactory::new()->create();
 
         $response = $this->actingAs($user)->postJson($this->storeUrl('MutationProduct'), [

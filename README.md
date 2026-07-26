@@ -7,10 +7,12 @@ Plug-in Laravel de gestion des données d'une application Laravel : parcours des
 
 ## Prérequis
 
-- PHP 8.3+
-- Laravel 13
+- PHP 8.2+ (8.3+ si l'app hôte utilise Laravel 13, qui l'exige)
+- Laravel 11, 12 ou 13
 - Node 20+ et npm (pour le front Nuxt, uniquement si lancé hors Docker)
 - Docker + docker-compose (pour l'environnement de dev/test)
+
+> Limite connue sous Laravel 11 : une colonne JSON sur une connexion **sqlite** est indiscernable d'une colonne string à l'introspection (`SQLiteGrammar::typeJson()` ignore `use_native_json` avant Laravel 12) — sans effet sur mysql/pgsql, qui exposent nativement un type `json`.
 
 ## Installation dans une application hôte
 

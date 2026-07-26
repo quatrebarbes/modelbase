@@ -32,4 +32,18 @@ abstract class TestCase extends BaseTestCase
     {
         $this->loadLaravelMigrations();
     }
+
+    /**
+     * `SQLiteGrammar::typeJson()` ignore `use_native_json` sur Laravel 11
+     * (toujours 'text') : le flag n'est respecté qu'à partir de Laravel 12,
+     * ce qui rend une colonne JSON sqlite indiscernable d'une colonne string
+     * à l'introspection sous Laravel 11 — propre à sqlite, mysql/pgsql
+     * exposent nativement un type 'json' quelle que soit la version.
+     */
+    protected function skipUnlessSqliteSupportsNativeJson(): void
+    {
+        if (version_compare($this->app->version(), '12', '<')) {
+            $this->markTestSkipped('Détection JSON sqlite non supportée sur Laravel 11 (use_native_json ignoré par SQLiteGrammar) — mysql/pgsql non affectés.');
+        }
+    }
 }

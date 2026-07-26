@@ -176,6 +176,8 @@ class ItemListingTest extends TestCase
 
     public function test_it_returns_the_full_detail_of_an_item_with_typed_values(): void
     {
+        $this->skipUnlessSqliteSupportsNativeJson();
+
         $user = UserFactory::new()->create();
 
         $response = $this->actingAs($user)->getJson($this->showUrl('ListingProduct', '1'));
