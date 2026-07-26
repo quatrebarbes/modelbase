@@ -1,15 +1,17 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-26 (Phase 10 close — compatibilité Laravel 11/12/13).
+Dernière mise à jour : 2026-07-26 (ajout des Phases 11-13 — séquencement des exigences EX-432 à EX-447, non encore développées).
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
 1. Architecture générale (EX-101 à EX-119)
 2. Bases de données (EX-201 à EX-208)
 3. Modèles (EX-301 à EX-309)
-4. Items (EX-401 à EX-431)
+4. Items (EX-401 à EX-447)
 
-Les exigences EX-107 à EX-119 (module 1), EX-306 à EX-309 (module 3) et EX-425 à EX-431 (module 4) ont été ajoutées aux SFD après la clôture de la Phase 6 et ne sont pas encore développées — cf. Phases 7-9 ci-dessous, qui en proposent le séquencement et l'implémentation.
+Les exigences EX-101 à EX-431 sont toutes développées (Phases 0 à 10 ci-dessous, closes).
+
+Les exigences EX-432 à EX-447 (module 4 — filtrage/tri du listing d'items, gestion des items soft-deleted, mise à jour à la demande du cache Scout) ont été ajoutées aux SFD après la clôture de la Phase 10 et ne sont pas encore développées. Elles sont désormais séquencées dans les Phases 11-13 ci-dessous.
 
 ## Architecture technique retenue
 
@@ -20,22 +22,25 @@ Les exigences EX-107 à EX-119 (module 1), EX-306 à EX-309 (module 3) et EX-425
 
 ## État global
 
-| Phase | Module SFD                    | Statut    |
-|-------|-------------------------------|-----------|
-| 0     | Socle technique               | ✅ fait    |
-| 1     | Architecture générale (accès) | ✅ fait    |
-| 2     | Bases de données              | ✅ fait    |
-| 3     | Modèles                       | ✅ fait    |
-| 4a    | Items — listing & détail      | ✅ fait    |
-| 4b    | Items — création/édition      | ✅ fait    |
-| 4c    | Items — suppression           | ✅ fait    |
-| 4d    | Items — fidélité Eloquent     | ✅ fait    |
-| 5     | Ergonomie front (modules 3-4) | ✅ fait    |
-| 6     | Exposition du front           | ✅ fait    |
-| 7     | Internationalisation FR/EN    | ✅ fait    |
-| 8     | Identité visuelle             | ✅ fait    |
-| 9     | Relations entre modèles       | ✅ fait    |
-| 10    | Compatibilité Laravel 11/12/13 (technique) | ✅ fait |
+| Phase | Module SFD                     | Statut    |
+|-------|--------------------------------|-----------|
+| 0     | Socle technique                | ✅ fait    |
+| 1     | Architecture générale (accès)  | ✅ fait    |
+| 2     | Bases de données               | ✅ fait    |
+| 3     | Modèles                        | ✅ fait    |
+| 4a    | Items — listing & détail       | ✅ fait    |
+| 4b    | Items — création/édition       | ✅ fait    |
+| 4c    | Items — suppression            | ✅ fait    |
+| 4d    | Items — fidélité Eloquent      | ✅ fait    |
+| 5     | Ergonomie front (modules 3-4)  | ✅ fait    |
+| 6     | Exposition du front            | ✅ fait    |
+| 7     | Internationalisation FR/EN     | ✅ fait    |
+| 8     | Identité visuelle              | ✅ fait    |
+| 9     | Relations entre modèles        | ✅ fait    |
+| 10    | Compatibilité Laravel 11/12/13 | ✅ fait    |
+| 11    | Filtrage et tri des items      | ⬜ à faire |
+| 12    | Items soft-deleted             | ⬜ à faire |
+| 13    | Cache Scout à la demande       | ⬜ à faire |
 
 ---
 
@@ -266,3 +271,54 @@ Points d'attention pour la suite :
 - Pas de CI (`.github/workflows/`) à ce jour : la compatibilité multi-version n'est donc vérifiée que ponctuellement (cette phase), pas à chaque commit — à surveiller si une régression Laravel 11/12 passe inaperçue plus tard.
 - `demo/composer.json` (app hôte de démo) reste volontairement pinné sur Laravel 13 (`^13.8`) : c'est l'environnement de dev/test du plug-in, pas une matrice de compatibilité — non concerné par cette phase.
 - Comme pour les Phases 6/7/8 : rendu visuel du diagramme Mermaid et des tableaux de relations non vérifié dans un navigateur réel (`chromium-cli` indisponible dans cet environnement) — vérifié à la place via le HTML rendu côté serveur (`curl` authentifié sur le conteneur `frontend`, port 3000) : `<h2>products</h2>` et les lignes réelles des produits liés sont bien présentes dans le HTML de la fiche détail d'une catégorie, et le bouton de bascule du diagramme est bien présent sur la page de listing — logs du conteneur `frontend` propres après rechargement (HMR, puis build de production), sans erreur de compilation liée aux nouveaux composants.
+
+## Phase 11 — Items : filtrage et tri du listing (module 4, EX-432 à EX-436)
+
+Porte sur le même endpoint `GET /connections/{c}/models/{m}/items` que la Phase 4a (EX-401/EX-403) — proposée avant la Phase 12 car le filtre soft-deleted (EX-438) s'exprime naturellement comme un paramètre de requête supplémentaire sur ce même endpoint, une fois le mécanisme générique de filtre en place.
+
+- [ ] Extension du endpoint de listing avec un ou plusieurs paramètres de filtre par colonne (EX-432) — colonnes restreintes à celles exposées par `ItemRepository::columnsFor()` (EX-422), jamais à un nom de colonne brut passé tel quel par le client, pour écarter tout risque d'injection via un nom de colonne/direction de tri non validé
+- [ ] Filtre texte « contient », insensible à la casse, pour les colonnes de type texte ; égalité stricte pour les autres types (EX-433)
+- [ ] Combinaison en ET (AND) de plusieurs filtres de colonnes appliqués simultanément (EX-434)
+- [ ] Tri sur une ou plusieurs colonnes, chacune avec sa direction (EX-435)
+- [ ] Ordre de priorité explicite entre colonnes de tri lorsque plusieurs sont actives simultanément (EX-436)
+- [ ] Front : contrôles de filtre/tri sur `ItemList.vue` (un champ par colonne principale a minima, à étendre si besoin), état reflété dans l'URL (query params) pour rester partageable/rechargeable
+- Tests Feature à écrire : filtre texte partiel insensible à la casse, filtre égalité stricte sur colonne non-texte, combinaison de plusieurs filtres (ET), tri simple, tri multi-colonnes avec priorité, tentative de filtre/tri sur un nom de colonne inexistant ou non exposée par `columnsFor()` (rejet explicite, pas d'erreur SQL)
+- Tests Unit à écrire : construction de la clause de filtre par type de colonne, application de l'ordre de priorité de tri
+
+Points d'attention identifiés en amont (à vérifier à l'implémentation) :
+- **Limite SFD explicite** : le filtre/tri ne s'applique qu'au listing standard d'un modèle, jamais aux tableaux d'objets liés (EX-425 à EX-431, Phase 9) — pas d'extension de `RelationRepository::paginateRelated()` prévue ici.
+- **Cohérence avec le point ouvert EX-402** : filtre et tri portent sur l'ensemble des colonnes exposées par le modèle, indépendamment de la sélection non tranchée des colonnes « principales » du listing compact.
+- Le filtre par colonne de clé étrangère (type `foreign_key`) reste à trancher : égalité stricte sur la valeur brute de la colonne (comportement par défaut d'EX-433 pour un type non-texte), pas de résolution vers l'item lié.
+
+## Phase 12 — Items : gestion des items soft-deleted (module 4, EX-437 à EX-443)
+
+- [ ] Détection du trait Eloquent `SoftDeletes` sur le modèle hôte — réutilisation du mécanisme de réflexion déjà en place (`Support\RelationMethodDenylist`, Phase 9, qui gère déjà `SoftDeletes` pour son propre denylist) plutôt qu'une nouvelle détection ad hoc
+- [ ] Listing standard : exclusion par défaut des items soft-deleted pour un modèle `SoftDeletes` (EX-437)
+- [ ] Paramètre de filtre listing « avec supprimés » / « supprimés uniquement » (EX-438) — `withTrashed()`/`onlyTrashed()` Eloquent natifs plutôt qu'une clause `whereNull`/`whereNotNull` maison sur la colonne de suppression
+- [ ] Indicateur visuel dédié sur un item soft-deleted, dans le listing et sur la fiche détail (EX-439) — nouveau champ `is_trashed` sur la ligne d'item et sur la fiche détail (cf. `Item.isTrashed` du modèle de données SFD)
+- [ ] Action de restauration depuis la fiche détail d'un item soft-deleted (EX-440) — `restore()` Eloquent, cohérent avec EX-424 (événements `restoring`/`restored`)
+- [ ] Action de suppression définitive (physique), distincte de la suppression standard (EX-418/EX-420), proposée uniquement sur un item déjà soft-deleted (EX-441) — `forceDelete()` Eloquent
+- [ ] Confirmation supplémentaire dédiée avant toute suppression définitive, en plus de la confirmation déjà requise pour la suppression standard (EX-442)
+- [ ] Modèle n'utilisant pas `SoftDeletes` : aucune de ces fonctions (filtre, indicateur, restauration, suppression définitive) n'est proposée ; la suppression standard y reste physique et immédiate, comportement déjà acquis en Phase 4c (EX-443)
+- Tests Feature à écrire : listing exclut les soft-deleted par défaut, filtre « avec supprimés »/« supprimés uniquement », restauration, suppression définitive, confirmation requise, modèle sans `SoftDeletes` non affecté (comportement Phase 4c inchangé)
+- Tests Unit à écrire : détection du trait `SoftDeletes`, construction de la requête filtrée par visibilité des soft-deleted
+
+Points d'attention identifiés en amont (à vérifier à l'implémentation) :
+- **Limite SFD explicite** : le filtre soft-deleted et les actions de restauration/suppression définitive ne s'appliquent qu'au listing standard et à la fiche détail d'un item, jamais aux tableaux d'objets liés (EX-425 à EX-431) — ceux-ci continuent d'afficher les objets liés tels que renvoyés par la relation Eloquent, sans filtre de visibilité dédié.
+- **Interaction avec EX-424 (Phase 4d)** : `ItemRepository::delete()` passe déjà par une instance Eloquent réelle — un modèle `SoftDeletes` y bénéficie donc déjà d'une suppression douce plutôt que physique par simple effet de bord (déjà noté en Phase 4d) ; cette phase formalise ce comportement côté API/front (indicateur, filtre) plutôt que de changer la mécanique de suppression elle-même.
+- **Interaction avec la Phase 11** : le paramètre de filtre soft-deleted vient s'ajouter aux paramètres de filtre/tri par colonne du même endpoint de listing — à concevoir ensemble pour éviter deux mécanismes de query-building parallèles sur `ItemRepository::paginate()`.
+
+## Phase 13 — Items : mise à jour à la demande du cache Scout (module 4, EX-444 à EX-447)
+
+Phase la plus isolée des trois : n'affecte que la fiche détail d'un item, sans toucher au listing ni à sa pagination/son filtrage.
+
+- [ ] Détection du trait Laravel Scout `Searchable` sur le modèle hôte (même approche de réflexion que pour `SoftDeletes`)
+- [ ] Action « réindexer » sur la fiche détail d'un item, proposée uniquement pour un modèle `Searchable` (EX-444, EX-447)
+- [ ] Invocation de `searchable()` sur l'instance Eloquent de l'item, sans réimplémenter de logique d'indexation propre au plug-in (EX-445)
+- [ ] Confirmation visuelle de succès/échec de la mise à jour, cohérente avec le mécanisme de toast déjà en place (`useToast`, Phase 5) (EX-446)
+- Tests Feature à écrire : action présente et fonctionnelle pour un modèle `Searchable`, action absente pour un modèle sans ce trait, confirmation visuelle sur succès et sur échec (driver Scout simulé en échec)
+- Tests Unit à écrire : détection du trait `Searchable`
+
+Points d'attention identifiés en amont (à vérifier à l'implémentation) :
+- **Limites SFD explicites** : pas de réindexation en masse (un seul item à la fois) ; si le driver Scout de l'app hôte est asynchrone (file d'attente), le plug-in ne fait que déclencher la synchronisation, sans garantir ni observer le délai de traitement réel — la confirmation visuelle (EX-446) porte donc sur le déclenchement, pas sur la confirmation que l'index a effectivement été mis à jour.
+- Le driver Scout par défaut de l'environnement `docker-compose` de démo n'est pas encore arrêté — à choisir (ex. driver `database`/`collection` local plutôt qu'un service externe type Algolia/Meilisearch) pour permettre un test de bout en bout réaliste sans dépendance externe.
