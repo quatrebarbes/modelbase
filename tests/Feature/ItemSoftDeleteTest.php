@@ -153,6 +153,25 @@ class ItemSoftDeleteTest extends TestCase
         ]);
     }
 
+    private function itemRelationUrl(string $model, string $item, string $relation): string
+    {
+        return route('modelbase.api.connections.models.items.relations.index', [
+            'connection' => 'primary',
+            'model' => $model,
+            'item' => $item,
+            'relation' => $relation,
+        ]);
+    }
+
+    private function updateUrl(string $model, string $item): string
+    {
+        return route('modelbase.api.connections.models.items.update', [
+            'connection' => 'primary',
+            'model' => $model,
+            'item' => $item,
+        ]);
+    }
+
     public function test_default_listing_excludes_soft_deleted_items(): void
     {
         $user = UserFactory::new()->create();
@@ -335,5 +354,50 @@ class ItemSoftDeleteTest extends TestCase
         $response->assertStatus(409);
         $response->assertJsonStructure(['message']);
         $this->assertTrue(DB::connection('primary')->table('archivable_items')->where('id', 3)->exists());
+    }
+
+    /**
+     * Régression : consulter le tableau d'objets liés d'un item (sous sa
+     * fiche détail, systématique dès qu'un item a au moins une relation)
+     * supprimait réellement cet item, sans aucun appel de suppression — cf.
+     * RelationMethodGuard, docs/roadmap.md Phase 12. `/columns` et
+     * `/relations` (schéma du modèle) ne sont *pas* concernées : elles
+     * réflexionnent une instance neuve (`new $class`, `exists = false`), sur
+     * laquelle `forceDeleteQuietly()`/`delete()` est un no-op — seul
+     * `RelationRepository::paginateRelated()` (endpoint ci-dessous) réflexionne
+     * une instance réellement récupérée (`find()`, `exists = true`), la seule
+     * sur laquelle l'invocation a un effet réel. Le nom de relation demandé
+     * n'a pas besoin d'exister : `relationsOf()` tourne (et déclenchait la
+     * suppression) avant même la vérification de son existence.
+     */
+    public function test_viewing_an_items_related_table_does_not_delete_it(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $this->actingAs($user)->getJson($this->itemRelationUrl('ArchivableItem', '1', 'anything'));
+
+        $this->assertTrue(
+            DB::connection('primary')->table('archivable_items')->where('id', 1)->whereNull('deleted_at')->exists()
+        );
+    }
+
+    /**
+     * Même régression, sur le second chemin réellement exploitable :
+     * `ItemRepository::update()` réflexionne lui aussi une instance
+     * réellement récupérée (`$class::find($id)`, via `columnsFor()`) pour
+     * construire le schéma de colonnes avant d'appliquer les valeurs
+     * soumises — une simple modification d'un item aurait donc, elle aussi,
+     * pu le supprimer physiquement au passage.
+     */
+    public function test_updating_an_item_does_not_delete_it(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->patchJson($this->updateUrl('ArchivableItem', '1'), ['name' => 'Renamed']);
+
+        $response->assertOk();
+        $this->assertTrue(
+            DB::connection('primary')->table('archivable_items')->where('id', 1)->whereNull('deleted_at')->exists()
+        );
     }
 }

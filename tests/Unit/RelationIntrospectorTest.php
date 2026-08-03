@@ -78,6 +78,12 @@ class RelationIntrospectorTest extends TestCase
             $table->string('title');
         });
 
+        Schema::connection('primary')->create('soft_products', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->timestamp('deleted_at')->nullable();
+        });
+
         DB::connection('primary')->table('categories')->insert(['id' => 1, 'name' => 'Tools']);
         DB::connection('primary')->table('products')->insert(['id' => 1, 'category_id' => 1, 'name' => 'Hammer']);
         DB::connection('primary')->table('product_details')->insert(['product_id' => 1, 'notes' => 'Steel head']);
@@ -91,6 +97,7 @@ class RelationIntrospectorTest extends TestCase
         DB::connection('primary')->table('countries')->insert(['id' => 1, 'name' => 'Wonderland']);
         DB::connection('primary')->table('authors')->insert(['id' => 1, 'country_id' => 1, 'name' => 'Alice']);
         DB::connection('primary')->table('posts')->insert(['author_id' => 1, 'title' => 'Hello']);
+        DB::connection('primary')->table('soft_products')->insert(['id' => 1, 'name' => 'Wrench']);
 
         $this->putBareModel('RelProductDetail', 'product_details');
         $this->putBareModel('RelTag', 'tags');
@@ -100,6 +107,7 @@ class RelationIntrospectorTest extends TestCase
         $this->putCategory();
         $this->putProduct();
         $this->putCountry();
+        $this->putSoftProduct();
     }
 
     protected function tearDown(): void
@@ -134,6 +142,11 @@ class RelationIntrospectorTest extends TestCase
         return $this->hostNamespace().'\\RelComment';
     }
 
+    private function softProductClass(): string
+    {
+        return $this->hostNamespace().'\\RelSoftProduct';
+    }
+
     private function product(): mixed
     {
         $class = $this->productClass();
@@ -158,6 +171,13 @@ class RelationIntrospectorTest extends TestCase
     private function comment(): mixed
     {
         $class = $this->commentClass();
+
+        return $class::find(1);
+    }
+
+    private function softProduct(): mixed
+    {
+        $class = $this->softProductClass();
 
         return $class::find(1);
     }
@@ -330,6 +350,40 @@ class RelationIntrospectorTest extends TestCase
     }
 
     /**
+     * Régression : le trait `SoftDeletes` ajoute des méthodes publiques sans
+     * paramètre absentes de `Model` (`forceDeleteQuietly`/`restoreQuietly`),
+     * donc non couvertes par la seule réflexion sur `Model::class` — un modèle
+     * ordinaire (RelProduct ci-dessus) ne suffit pas à couvrir ce cas, cf.
+     * incident Phase 12 (RelationMethodDenylist).
+     */
+    private function putSoftProduct(): void
+    {
+        $namespace = $this->hostNamespace();
+
+        File::put(app_path('Models/RelSoftProduct.php'), <<<PHP
+        <?php
+
+        namespace {$namespace};
+
+        use Illuminate\Database\Eloquent\Model;
+        use Illuminate\Database\Eloquent\SoftDeletes;
+
+        class RelSoftProduct extends Model
+        {
+            use SoftDeletes;
+
+            protected \$connection = 'primary';
+
+            protected \$table = 'soft_products';
+
+            public \$timestamps = false;
+        }
+        PHP);
+
+        require_once app_path('Models/RelSoftProduct.php');
+    }
+
+    /**
      * EX-307 : Country hasManyThrough Post (via Author) — chaîne à 3 tables.
      */
     private function putCountry(): void
@@ -469,5 +523,22 @@ class RelationIntrospectorTest extends TestCase
         $this->assertArrayNotHasKey('fresh', $relations);
         $this->assertArrayNotHasKey('replicate', $relations);
         $this->assertNotNull(DB::connection('primary')->table('products')->find(1));
+    }
+
+    /**
+     * Régression : `forceDeleteQuietly`/`restoreQuietly` (SoftDeletes) sont
+     * publiques, sans paramètre requis, et absentes de `Model` lui-même — non
+     * couvertes par la réflexion générique sur `Model::class`. Invoquées à
+     * l'aveugle par une introspection incomplète, `forceDeleteQuietly` aurait
+     * réellement supprimé l'item consulté (incident Phase 12 : consulter la
+     * fiche d'un item SoftDeletes le supprimait physiquement).
+     */
+    public function test_it_never_invokes_soft_deletes_quiet_methods(): void
+    {
+        $relations = (new RelationIntrospector)->relationsOf($this->softProduct());
+
+        $this->assertArrayNotHasKey('forceDeleteQuietly', $relations);
+        $this->assertArrayNotHasKey('restoreQuietly', $relations);
+        $this->assertNotNull(DB::connection('primary')->table('soft_products')->whereNull('deleted_at')->find(1));
     }
 }

@@ -70,21 +70,17 @@ class ColumnIntrospector
      * Construire une BelongsTo n'exécute aucune requête (`addConstraints()`
      * ne fait qu'ajouter une clause `where` au futur query builder), invoquer
      * la méthode de relation est donc sans effet de bord — sous réserve de
-     * ne jamais invoquer une méthode qui, elle, en aurait un (cf. denylist).
+     * ne jamais invoquer une méthode qui, elle, en aurait un (cf. RelationMethodGuard).
      *
      * @return array<string, array{table: string, column: string}>
      */
     public function relationForeignKeys(Model $instance): array
     {
-        $denylist = RelationMethodDenylist::get();
+        $class = new ReflectionClass($instance);
         $relations = [];
 
-        foreach ((new ReflectionClass($instance))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if (
-                $method->isStatic()
-                || $method->getNumberOfRequiredParameters() > 0
-                || in_array($method->getName(), $denylist, true)
-            ) {
+        foreach ($class->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            if (! RelationMethodGuard::isInvocable($method, $class)) {
                 continue;
             }
 

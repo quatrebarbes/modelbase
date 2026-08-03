@@ -5,7 +5,9 @@ namespace Quatrebarbes\Modelbase\Tests\Unit;
 use Quatrebarbes\Modelbase\Support\ColumnIntrospector;
 use Quatrebarbes\Modelbase\Support\ColumnType;
 use Quatrebarbes\Modelbase\Tests\TestCase;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class ColumnIntrospectorTest extends TestCase
@@ -43,6 +45,7 @@ class ColumnIntrospectorTest extends TestCase
             $table->boolean('active');
             $table->json('metadata')->nullable();
             $table->timestamp('published_at')->nullable();
+            $table->softDeletes();
         });
     }
 
@@ -162,6 +165,48 @@ class ColumnIntrospectorTest extends TestCase
         $relations = (new ColumnIntrospector)->relationForeignKeys($instance);
 
         $this->assertSame([], $relations);
+    }
+
+    /**
+     * Régression (incident Phase 12, docs/roadmap.md) : le trait `SoftDeletes`
+     * ajoute des méthodes publiques sans paramètre absentes de `Model`
+     * (`forceDeleteQuietly`/`restoreQuietly`), donc non couvertes par la seule
+     * réflexion sur `Model::class` — invoquée à l'aveugle sur une instance
+     * réellement récupérée (`find()`, `exists = true`) par
+     * `relationForeignKeys()`, `forceDeleteQuietly()` la supprimait
+     * réellement (cf. `RelationRepository::paginateRelated()`/
+     * `ItemRepository::update()`, les deux call sites réellement exploitables
+     * — un appel sur une instance neuve, `new $class`, `exists = false`, reste
+     * lui sans effet, `Model::delete()` court-circuitant sur `! $this->exists`).
+     * `RelationIntrospectorTest` couvre déjà le même garde-fou côté
+     * `RelationIntrospector` ; couvert ici aussi car les deux mécanismes de
+     * réflexion sont censés rester alignés (même `RelationMethodGuard`
+     * partagé) sans qu'un futur écart entre les deux passe inaperçu.
+     */
+    public function test_it_never_invokes_soft_deletes_quiet_methods(): void
+    {
+        DB::connection('primary')->table('categories')->insert(['id' => 1, 'name' => 'Tools']);
+        DB::connection('primary')->table('products')->insert([
+            'id' => 1, 'category_id' => 1, 'name' => 'Hammer', 'price' => 10, 'active' => true,
+        ]);
+
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            use SoftDeletes;
+
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+        };
+        $instance = $instance::find(1);
+
+        (new ColumnIntrospector)->relationForeignKeys($instance);
+
+        $this->assertTrue(
+            DB::connection('primary')->table('products')->where('id', 1)->exists()
+        );
     }
 }
 

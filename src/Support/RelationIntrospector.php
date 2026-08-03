@@ -26,7 +26,7 @@ use Throwable;
  * Construire une relation n'exécute aucune requête (`addConstraints()` ne
  * fait qu'ajouter une clause `where` au futur query builder), invoquer la
  * méthode de relation est donc sans effet de bord — sous réserve du même
- * garde-fou de sécurité que ColumnIntrospector (RelationMethodDenylist,
+ * garde-fou de sécurité que ColumnIntrospector (RelationMethodGuard,
  * partagé pour ne jamais faire diverger les deux mécanismes).
  */
 class RelationIntrospector
@@ -49,15 +49,11 @@ class RelationIntrospector
      */
     public function relationsOf(Model $instance): array
     {
-        $denylist = RelationMethodDenylist::get();
+        $class = new ReflectionClass($instance);
         $relations = [];
 
-        foreach ((new ReflectionClass($instance))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-            if (
-                $method->isStatic()
-                || $method->getNumberOfRequiredParameters() > 0
-                || in_array($method->getName(), $denylist, true)
-            ) {
+        foreach ($class->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            if (! RelationMethodGuard::isInvocable($method, $class)) {
                 continue;
             }
 
