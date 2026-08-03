@@ -8,9 +8,9 @@ use Illuminate\Database\Eloquent\Model;
  * Assemble le listing des relations Eloquent déclarées par le modèle hôte
  * (nom, type, multiplicité, modèle/connexion cible, navigabilité — EX-306 à
  * EX-309, EX-426) et le listing paginé des objets liés d'une relation donnée
- * (EX-427 à EX-431) — source unique consommée à la fois par le diagramme
- * Mermaid (module 3) et par les tableaux d'objets liés de la fiche détail
- * d'un item (module 4), pour ne pas dupliquer la logique de résolution.
+ * (EX-427 à EX-431) — source unique consommée à la fois par le diagramme de
+ * relations (module 3, EX-310) et par les tableaux d'objets liés de la fiche
+ * détail d'un item (module 4), pour ne pas dupliquer la logique de résolution.
  *
  * EX-308/EX-431 : la navigabilité d'une relation dépend des deux mêmes
  * conditions qu'une clé étrangère simple (EX-410) — modèle cible déclaré

@@ -10,13 +10,14 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use ReflectionClass;
 use ReflectionMethod;
 use Throwable;
 
 /**
- * EX-307 (diagramme de classe, module 3) / EX-425 (tableaux d'objets liés,
+ * EX-307 (diagramme de relations, module 3) / EX-425 (tableaux d'objets liés,
  * module 4) : détecte les relations Eloquent déclarées par le modèle hôte
  * (méthode publique sans paramètre requis, invoquée pour inspecter l'objet
  * Relation construit) — même mécanisme de réflexion que
@@ -87,7 +88,14 @@ class RelationIntrospector
      */
     private function matchedType(mixed $relation): ?string
     {
-        if (! $relation instanceof Relation) {
+        // `MorphTo` étend `BelongsTo` (matcherait donc à tort l'entrée
+        // BelongsTo ci-dessous par héritage) mais n'est pas un type supporté
+        // par EX-307 : appelée sur une instance neuve, sa cible se résout à
+        // l'instance elle-même plutôt qu'au modèle réellement visé (le
+        // modèle cible dépend de la valeur de la colonne `*_type`, inconnue
+        // hors contexte d'un item précis) — une relation auto-référencée
+        // absurde plutôt qu'une vraie relation vers un autre modèle.
+        if (! $relation instanceof Relation || $relation instanceof MorphTo) {
             return null;
         }
 

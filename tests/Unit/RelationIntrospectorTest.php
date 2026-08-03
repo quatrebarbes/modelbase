@@ -94,9 +94,9 @@ class RelationIntrospectorTest extends TestCase
 
         $this->putBareModel('RelProductDetail', 'product_details');
         $this->putBareModel('RelTag', 'tags');
-        $this->putBareModel('RelComment', 'comments');
         $this->putBareModel('RelAuthor', 'authors');
         $this->putBareModel('RelPost', 'posts');
+        $this->putComment();
         $this->putCategory();
         $this->putProduct();
         $this->putCountry();
@@ -129,6 +129,11 @@ class RelationIntrospectorTest extends TestCase
         return $this->hostNamespace().'\\RelCountry';
     }
 
+    private function commentClass(): string
+    {
+        return $this->hostNamespace().'\\RelComment';
+    }
+
     private function product(): mixed
     {
         $class = $this->productClass();
@@ -146,6 +151,13 @@ class RelationIntrospectorTest extends TestCase
     private function country(): mixed
     {
         $class = $this->countryClass();
+
+        return $class::find(1);
+    }
+
+    private function comment(): mixed
+    {
+        $class = $this->commentClass();
 
         return $class::find(1);
     }
@@ -172,6 +184,42 @@ class RelationIntrospectorTest extends TestCase
         PHP);
 
         require_once app_path("Models/{$class}.php");
+    }
+
+    /**
+     * Régression : `MorphTo` (`commentable`) étend `BelongsTo` en Eloquent —
+     * `RelComment` porte donc elle-même une relation polymorphique, ce que le
+     * `RelComment` bare model utilisé jusqu'ici (simple cible de morphMany/
+     * morphOne côté RelProduct) ne permettait pas de couvrir.
+     */
+    private function putComment(): void
+    {
+        $namespace = $this->hostNamespace();
+
+        File::put(app_path('Models/RelComment.php'), <<<PHP
+        <?php
+
+        namespace {$namespace};
+
+        use Illuminate\Database\Eloquent\Model;
+        use Illuminate\Database\Eloquent\Relations\MorphTo;
+
+        class RelComment extends Model
+        {
+            protected \$connection = 'primary';
+
+            protected \$table = 'comments';
+
+            public \$timestamps = false;
+
+            public function commentable(): MorphTo
+            {
+                return \$this->morphTo();
+            }
+        }
+        PHP);
+
+        require_once app_path('Models/RelComment.php');
     }
 
     /**
@@ -371,6 +419,23 @@ class RelationIntrospectorTest extends TestCase
         $this->assertSame('HasManyThrough', $relations['posts']['type']);
         $this->assertSame('many', $relations['posts']['multiplicity']);
         $this->assertSame('RelPost', class_basename($relations['posts']['related']));
+    }
+
+    /**
+     * Régression : `MorphTo` étend `BelongsTo`, donc `$relation instanceof
+     * BelongsTo` (première entrée de TYPES) matchait aussi une relation
+     * polymorphique avant correction. Appelée sur une instance neuve (sans
+     * valeur pour `commentable_type`), Laravel résout alors `getRelated()` à
+     * l'instance elle-même plutôt qu'au modèle réellement visé (connu
+     * seulement pour un item précis) — une relation auto-référencée absurde
+     * plutôt qu'une vraie relation vers un autre modèle. `morphTo` n'est de
+     * toute façon pas dans la liste des types supportés par EX-307.
+     */
+    public function test_it_ignores_a_morph_to_relation(): void
+    {
+        $relations = (new RelationIntrospector)->relationsOf($this->comment());
+
+        $this->assertArrayNotHasKey('commentable', $relations);
     }
 
     public function test_it_skips_a_method_that_requires_a_parameter(): void

@@ -4,6 +4,7 @@ namespace Quatrebarbes\Modelbase\Support;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 use ReflectionMethod;
@@ -93,7 +94,14 @@ class ColumnIntrospector
                 continue;
             }
 
-            if (! $relation instanceof BelongsTo) {
+            // `MorphTo` étend `BelongsTo` mais n'en est pas une au sens de
+            // cette méthode : appelée sur une instance neuve (sans valeur
+            // pour la colonne `*_type`), sa cible se résout à l'instance
+            // elle-même (`getRelated()` renvoie le modèle courant), ce qui
+            // produirait une clé étrangère auto-référencée absurde. Une
+            // relation polymorphique n'a de toute façon pas une table cible
+            // unique, hors périmètre d'EX-423 (une seule table référencée).
+            if (! $relation instanceof BelongsTo || $relation instanceof MorphTo) {
                 continue;
             }
 

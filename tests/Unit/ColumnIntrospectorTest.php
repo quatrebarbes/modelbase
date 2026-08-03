@@ -124,6 +124,45 @@ class ColumnIntrospectorTest extends TestCase
 
         $this->assertSame([], $relations);
     }
+
+    /**
+     * Régression : `MorphTo` étend `BelongsTo` en Eloquent, donc `$relation
+     * instanceof BelongsTo` matchait aussi une relation polymorphique avant
+     * correction. Appelée sur une instance neuve (sans valeur pour la
+     * colonne `*_type`), Laravel résout alors `getRelated()` à l'instance
+     * elle-même plutôt qu'au modèle réellement visé (connu seulement pour un
+     * item précis) — `commentable_id` se serait vue attribuer une clé
+     * étrangère auto-référencée absurde (`comments.id`) plutôt qu'aucune. Une
+     * relation `morphTo` n'a de toute façon pas de table cible unique, hors
+     * périmètre d'EX-423.
+     */
+    public function test_it_ignores_a_morph_to_relation(): void
+    {
+        Schema::connection('primary')->create('comments', function (Blueprint $table) {
+            $table->id();
+            $table->string('commentable_type');
+            $table->unsignedBigInteger('commentable_id');
+            $table->string('body');
+        });
+
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'comments';
+
+            public $timestamps = false;
+
+            public function commentable(): \Illuminate\Database\Eloquent\Relations\MorphTo
+            {
+                return $this->morphTo();
+            }
+        };
+
+        $relations = (new ColumnIntrospector)->relationForeignKeys($instance);
+
+        $this->assertSame([], $relations);
+    }
 }
 
 class ColumnIntrospectorTestCategory extends \Illuminate\Database\Eloquent\Model

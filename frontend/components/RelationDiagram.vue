@@ -1,7 +1,13 @@
 <script setup lang="ts">
-// EX-306/EX-307/EX-308/EX-309 : diagramme de classe Mermaid des relations
-// Eloquent déclarées par le modèle courant, limité à celui-ci et aux modèles
-// qu'il relie directement (sans remonter leurs propres relations).
+// EX-306/EX-308/EX-309 : diagramme des relations Eloquent déclarées par le
+// modèle courant, limité à celui-ci et aux modèles qu'il relie directement
+// (sans remonter leurs propres relations). EX-310 : le modèle courant est
+// disposé au centre, les modèles liés sur un même niveau autour de lui, via
+// un layout `concentric` Cytoscape.js (poids 2 pour le centre, 1 pour les
+// modèles liés, largeur de niveau fixe à 1 : un seul anneau extérieur, quel
+// que soit le sens réel de chaque relation, cf. limite SFD) — un
+// `classDiagram` Mermaid (layout dagre) ne garantissait aucune position
+// relative, cf. docs/roadmap.md Phase 9bis.
 type Relation = {
   name: string
   type: string
@@ -28,8 +34,9 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 
 const api = useApiClient()
 const { t } = useI18n()
-const svg = ref('')
+const canvas = ref<HTMLElement | null>(null)
 const renderError = ref(false)
+let cy: import('cytoscape').Core | null = null
 
 const { data } = await useAsyncData(
   `relations-${props.connection}-${props.model}`,
@@ -38,57 +45,162 @@ const { data } = await useAsyncData(
 
 const relations = computed<Relation[]>(() => data.value?.data ?? [])
 
-function buildDefinition(items: Relation[]): string {
-  const lines = ['classDiagram', `class ${props.model}`]
+function buildElements(items: Relation[]) {
+  const nodes = [{ data: { id: props.model, label: props.model, center: true, unavailable: false } }]
   const declared = new Set([props.model])
+  const edges: Array<{ data: Record<string, unknown> }> = []
 
-  for (const relation of items) {
+  items.forEach((relation, index) => {
     if (!declared.has(relation.related_model)) {
       // Limite SFD : un modèle cible non navigable reste affiché (jamais
       // omis), avec une indication d'indisponibilité plutôt qu'un lien.
-      lines.push(relation.navigable
-        ? `class ${relation.related_model}`
-        : `class ${relation.related_model}["${relation.related_model} (${t('relations.unavailableModel')})"]`)
+      nodes.push({
+        data: {
+          id: relation.related_model,
+          label: relation.navigable
+            ? relation.related_model
+            : `${relation.related_model} (${t('relations.unavailableModel')})`,
+          center: false,
+          unavailable: !relation.navigable,
+        },
+      })
       declared.add(relation.related_model)
     }
 
-    const arity = relation.multiplicity === 'many' ? '*' : '1'
-    // EX-309 : type et multiplicité de la relation, sans détail de colonnes.
-    lines.push(`${props.model} "1" --> "${arity}" ${relation.related_model} : ${relation.name} (${relation.type})`)
-  }
+    // EX-309 : nom et multiplicité de la relation, sans détail de colonnes ni
+    // du type technique Eloquent (belongsTo, morphOne...) — multiplicité
+    // portée par chaque extrémité du lien (notation UML), « 1 » côté modèle
+    // courant (une instance interrogée à la fois) et « 1 » ou « * » côté
+    // modèle lié selon `relation.multiplicity`.
+    edges.push({
+      data: {
+        id: `edge-${index}`,
+        source: props.model,
+        target: relation.related_model,
+        label: relation.name,
+        sourceArity: '1',
+        targetArity: relation.multiplicity === 'many' ? '*' : '1',
+      },
+    })
+  })
 
-  return lines.join('\n')
+  return [...nodes, ...edges]
 }
 
 async function render() {
-  if (relations.value.length === 0) return
+  if (relations.value.length === 0 || !canvas.value) return
 
-  const { default: mermaid } = await import('mermaid')
-  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
-  // EX-107/EX-110 : le fond des boîtes de classe reprend la palette du
-  // plug-in (--color-bg-muted, déjà utilisé pour un fond discret ailleurs)
-  // plutôt que la couleur générique des thèmes Mermaid (`mainBkg`, une
-  // valeur codée en dur par thème — #1f2020 en sombre, #ECECFF en clair —
-  // indépendante de `primaryColor` malgré la coïncidence de valeur en
-  // sombre ; c'est bien `mainBkg` que le rendu des boîtes de classe
-  // consomme directement, d'où la nécessité de la surcharger elle aussi).
-  const bgMuted = getComputedStyle(document.documentElement).getPropertyValue('--color-bg-muted').trim()
-
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: dark ? 'dark' : 'default',
-    themeVariables: { primaryColor: bgMuted, mainBkg: bgMuted },
-  })
+  const { default: cytoscape } = await import('cytoscape')
+  const style = getComputedStyle(document.documentElement)
+  const colorBg = style.getPropertyValue('--color-bg').trim()
+  const colorBgMuted = style.getPropertyValue('--color-bg-muted').trim()
+  const colorBorder = style.getPropertyValue('--color-border').trim()
+  const colorText = style.getPropertyValue('--color-text').trim()
+  const colorPrimary = style.getPropertyValue('--color-primary').trim()
 
   try {
-    const { svg: rendered } = await mermaid.render(`relation-diagram-${props.model}`, buildDefinition(relations.value))
-    svg.value = rendered
+    cy = cytoscape({
+      container: canvas.value,
+      elements: buildElements(relations.value),
+      userZoomingEnabled: true,
+      userPanningEnabled: true,
+      boxSelectionEnabled: false,
+      autoungrabify: true,
+      style: [
+        {
+          selector: 'node',
+          style: {
+            label: 'data(label)',
+            'text-wrap': 'wrap',
+            'text-max-width': '90px',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'background-color': colorBgMuted,
+            'border-color': colorBorder,
+            'border-width': 1,
+            color: colorText,
+            'font-size': 12,
+            shape: 'round-rectangle',
+            padding: '12px',
+            width: 'label',
+            height: 'label',
+          },
+        },
+        {
+          selector: 'node[?center]',
+          style: {
+            'background-color': colorPrimary,
+            color: colorBg,
+            'border-width': 0,
+            'font-weight': 'bold',
+          },
+        },
+        {
+          selector: 'node[?unavailable]',
+          style: {
+            'border-style': 'dashed',
+            'text-opacity': 0.7,
+          },
+        },
+        {
+          selector: 'edge',
+          style: {
+            width: 1.5,
+            'line-color': colorBorder,
+            // Pas de fléchage : EX-310 impose une position équivalente pour
+            // un modèle lié quel que soit le sens réel de la relation
+            // (source ou cible) — un lien directionnel suggérerait une
+            // hiérarchie que le schéma ne représente pas.
+            'target-arrow-shape': 'none',
+            'source-arrow-shape': 'none',
+            'curve-style': 'bezier',
+            // Écarte davantage les liens parallèles (ex. Category -> Product
+            // via `products` et `latestProduct`) que le défaut Cytoscape
+            // (40) : sans quoi leurs étiquettes, positionnées au milieu de
+            // courbes trop rapprochées, se chevauchent et deviennent
+            // illisibles.
+            'control-point-step-size': 90,
+            label: 'data(label)',
+            'font-size': 10,
+            color: colorText,
+            'text-background-color': colorBg,
+            'text-background-opacity': 0.35,
+            'text-background-padding': '2px',
+            'text-background-shape': 'roundrectangle',
+            // Multiplicités en bout de lien (notation UML) plutôt que
+            // mêlées au nom/type de la relation, pour rester lisibles même
+            // sur un schéma dense (limite SFD : pas de plafond sur le
+            // nombre de modèles liés, EX-310).
+            'source-label': 'data(sourceArity)',
+            'target-label': 'data(targetArity)',
+            'source-text-offset': 8,
+            'target-text-offset': 8,
+          },
+        },
+      ],
+      layout: {
+        name: 'concentric',
+        // EX-310 : le modèle courant (poids 2) occupe seul le centre, tous
+        // les modèles liés (poids 1) se retrouvent sur le même anneau
+        // extérieur — `levelWidth` fixe à 1 empêche tout étagement entre eux.
+        concentric: (node) => (node.data('center') ? 2 : 1),
+        levelWidth: () => 1,
+        equidistant: true,
+        // Espacement généreux : le schéma porte désormais aussi les
+        // multiplicités en bout de lien (ci-dessus), qui ont besoin de
+        // place autour de chaque nœud pour rester lisibles.
+        minNodeSpacing: 80,
+      } as unknown as import('cytoscape').LayoutOptions,
+    })
+
+    cy.fit(undefined, 40)
   } catch {
     renderError.value = true
   }
 }
 
 onMounted(render)
+onUnmounted(() => cy?.destroy())
 </script>
 
 <template>
@@ -107,8 +219,7 @@ onMounted(render)
           <!-- Limite SFD : message explicite plutôt qu'un diagramme vide -->
           <p v-if="relations.length === 0">{{ $t('relations.diagramEmpty') }}</p>
           <p v-else-if="renderError">{{ $t('relations.diagramError') }}</p>
-          <!-- eslint-disable-next-line vue/no-v-html -->
-          <div v-else class="relation-diagram__canvas" v-html="svg" />
+          <div v-show="relations.length > 0 && !renderError" ref="canvas" class="relation-diagram__canvas" />
         </aside>
       </Transition>
     </div>
@@ -151,7 +262,8 @@ onMounted(render)
 }
 
 .relation-diagram__canvas {
-  overflow-x: auto;
+  width: 100%;
+  height: min(70vh, 40rem);
 }
 
 .relation-panel-backdrop-enter-active,

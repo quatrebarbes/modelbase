@@ -16,9 +16,9 @@ class RelationController extends Controller
     /**
      * EX-306/EX-307/EX-308/EX-309/EX-426 : relations Eloquent déclarées par
      * le modèle hôte (nom, type, multiplicité, modèle/connexion cible,
-     * navigabilité) — source unique consommée à la fois par le diagramme
-     * Mermaid (module 3) et par les tableaux d'objets liés de la fiche
-     * détail d'un item (module 4).
+     * navigabilité) — source unique consommée à la fois par le diagramme de
+     * relations (module 3, EX-310) et par les tableaux d'objets liés de la
+     * fiche détail d'un item (module 4).
      */
     public function index(string $connection, string $model)
     {
