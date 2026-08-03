@@ -191,6 +191,22 @@ class ItemRelationsTest extends TestCase
     }
 
     /**
+     * EX-454 : même repli sur la première/dernière page qu'ItemRepository::paginate().
+     */
+    public function test_it_falls_back_to_the_first_or_last_page_when_the_requested_page_is_out_of_bounds(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'products', ['per_page' => 1, 'page' => 0]));
+        $response->assertOk();
+        $response->assertJsonPath('meta.current_page', 1);
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'products', ['per_page' => 1, 'page' => 99]));
+        $response->assertOk();
+        $response->assertJsonPath('meta.current_page', 2);
+    }
+
+    /**
      * EX-428 : chaque ligne du tableau porte l'identifiant de l'item lié,
      * permettant au front de construire le lien vers sa propre fiche détail.
      */

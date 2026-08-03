@@ -78,7 +78,13 @@ class RelationRepository
             );
         }
 
-        $paginator = $instance->{$relationName}()->paginate($perPage, ['*'], 'page', max(1, $page));
+        $relationQuery = $instance->{$relationName}();
+
+        // EX-454 : même repli sur la première/dernière page qu'ItemRepository::paginate().
+        $lastPage = max(1, (int) ceil($relationQuery->count() / $perPage));
+        $currentPage = min(max($page, 1), $lastPage);
+
+        $paginator = $relationQuery->paginate($perPage, ['*'], 'page', $currentPage);
 
         return [
             'data' => collect($paginator->items())->map(fn (Model $row) => $row->getAttributes())->all(),

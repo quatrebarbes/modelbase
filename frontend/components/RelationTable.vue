@@ -23,18 +23,25 @@ const props = withDefaults(defineProps<{
 
 const api = useApiClient()
 const page = ref(1)
-const perPage = 15
+// EX-455/EX-456 : mémorisé par relation (connexion + modèle + nom de la
+// relation), pas par item — plusieurs items du même modèle partagent donc la
+// même préférence pour une relation donnée.
+const perPage = usePersistedPerPage(`relation:${props.connection}:${props.model}:${props.relation.name}`, 10)
+
+// Changer le nombre de lignes par page (EX-452) remet la page courante à 1,
+// qui peut ne plus exister avec le nouveau découpage.
+watch(perPage, () => { page.value = 1 })
 
 // EX-431 : une relation non navigable n'est jamais interrogée — l'API
 // bloquerait de toute façon la requête (409), la connexion étant injoignable.
 const { data, pending } = await useAsyncData(
-  `relation-items-${props.connection}-${props.model}-${props.item}-${props.relation.name}-${page.value}`,
+  () => `relation-items-${props.connection}-${props.model}-${props.item}-${props.relation.name}-${page.value}-${perPage.value}`,
   () => props.relation.navigable
     ? api(`/connections/${props.connection}/models/${props.model}/items/${props.item}/relations/${props.relation.name}`, {
-        query: { page: page.value, per_page: perPage },
+        query: { page: page.value, per_page: perPage.value },
       })
     : Promise.resolve(null),
-  { watch: [page] }
+  { watch: [page, perPage] }
 )
 
 const rows = computed<Array<Record<string, unknown>>>(() => data.value?.data ?? [])
@@ -89,7 +96,7 @@ function goToRelatedItem(row: Record<string, unknown>) {
       </table>
       <!-- EX-429 : pagination identique au listing standard d'un modèle -->
       <div v-if="meta && meta.total > 0" class="item-pagination-row">
-        <ItemPagination v-model:page="page" :meta="meta" />
+        <ItemPagination v-model:page="page" v-model:per-page="perPage" :meta="meta" />
         <Spinner v-if="pending" />
       </div>
     </template>

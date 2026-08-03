@@ -103,7 +103,15 @@ class ItemRepository
             }
         }
 
-        $paginator = $query->paginate($perPage, ['*'], 'page', max(1, $page));
+        // EX-454 : un numéro de page hors bornes (< 1 ou > au nombre de pages
+        // disponibles) se replie respectivement sur la première/dernière page
+        // plutôt que de renvoyer une page vide ou une erreur — le nombre de
+        // pages dépend des filtres/du tri déjà appliqués ci-dessus, d'où le
+        // comptage à ce stade plutôt qu'en amont.
+        $lastPage = max(1, (int) ceil($query->getCountForPagination() / $perPage));
+        $currentPage = min(max($page, 1), $lastPage);
+
+        $paginator = $query->paginate($perPage, ['*'], 'page', $currentPage);
 
         return [
             'data' => collect($paginator->items())->map(function ($row) use ($deletedAtColumn) {

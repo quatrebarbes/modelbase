@@ -9,7 +9,8 @@ const model = route.params.model as string
 
 const api = useApiClient()
 const { t } = useI18n()
-const perPage = 15
+// EX-455/EX-456 : mémorisé par modèle de listing standard (connexion + modèle).
+const perPage = usePersistedPerPage(`model:${connection}:${model}`, 25)
 
 function parseInitialFilters(): Record<string, string> {
   const initial: Record<string, string> = {}
@@ -41,11 +42,14 @@ watch(filters, (value) => {
 }, { deep: true })
 
 // Changer le tri remet la page à 1, une page 2 pouvant ne plus exister une
-// fois le tri (ou un filtre, ci-dessus) appliqué.
+// fois le tri (ou un filtre, ci-dessus) appliqué. Changer le nombre de lignes
+// par page (EX-452) a le même effet, le numéro de page courant n'ayant plus
+// forcément de sens avec le nouveau découpage.
 watch(sort, () => { page.value = 1 })
+watch(perPage, () => { page.value = 1 })
 
 const queryParams = computed(() => {
-  const query: Record<string, string | number> = { page: page.value, per_page: perPage }
+  const query: Record<string, string | number> = { page: page.value, per_page: perPage.value }
 
   if (sort.value) query.sort = sort.value
   if (trashed.value) query.trashed = trashed.value
@@ -145,7 +149,7 @@ useHead({ title: t('items.title', { model }) })
       :columns="columns"
     />
     <div v-if="meta && meta.total > 0" class="item-pagination-row">
-      <ItemPagination v-model:page="page" :meta="meta" />
+      <ItemPagination v-model:page="page" v-model:per-page="perPage" :meta="meta" />
       <Spinner v-if="pending" />
     </div>
   </main>
