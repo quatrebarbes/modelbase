@@ -1,17 +1,26 @@
 # Roadmap
 
-Dernière mise à jour : 2026-07-26 (Phase 13 développée et testée — mise à jour à la demande du cache Scout).
+Dernière mise à jour : 2026-08-03 (retrait de la Phase 14 et des exigences EX-448 à EX-453 associées, cf. décision du 2026-08-03).
+
+Historique : revue CTO du 2026-07-27, recensement des exigences SFD non développées ou non reflétées dans la roadmap — disposition en colonnes de la fiche détail/formulaire (alors EX-454 à EX-457, renumérotées EX-448 à EX-451 le 2026-08-03 après retrait d'EX-448 à EX-453), disposition en étoile du diagramme de relations EX-310 jamais réellement traduite techniquement malgré la Phase 9 close ; EX-452 à EX-456 (alors EX-458 à EX-462) déjà identifiées précédemment, toujours non développées.
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
 1. Architecture générale (EX-101 à EX-119)
 2. Bases de données (EX-201 à EX-208)
-3. Modèles (EX-301 à EX-309)
-4. Items (EX-401 à EX-447)
+3. Modèles (EX-301 à EX-310)
+4. Items (EX-401 à EX-456)
 
 Les exigences EX-101 à EX-436 sont toutes développées (Phases 0 à 11 ci-dessous, closes).
 
 Les exigences EX-437 à EX-447 (module 4 — gestion des items soft-deleted, mise à jour à la demande du cache Scout) ont été ajoutées aux SFD après la clôture de la Phase 10. Elles sont désormais toutes développées (Phases 12-13 ci-dessous, closes).
+
+Les exigences EX-452 à EX-456 (module 4 — choix du nombre de lignes par page et accès direct à une page, applicables au listing standard des items et aux tableaux d'objets liés, cf. « Pagination du listing des items » ; numérotées EX-458 à EX-462 jusqu'à leur renumérotation le 2026-08-03) ont été ajoutées aux SFD. Elles ne sont pas encore développées. Le périmètre de la mémorisation du nombre de lignes par page a été tranché (EX-456, ex-EX-462, ajoutée le 2026-07-25) : une valeur distincte par contexte de listing (modèle ou relation), pas une valeur unique globale à l'utilisateur.
+
+**Revue CTO du 2026-07-27 — écarts SFD ↔ roadmap identifiés à cette occasion**, tous non couverts par une phase existante :
+
+- **EX-310** (module 3, « Visualisation des relations entre modèles ») : « le diagramme dispose le modèle courant visuellement au centre et les modèles liés autour de lui ... selon une répartition en étoile ». Cette exigence existe dans la SFD depuis le même lot qu'EX-306 à EX-309 (déjà développées Phase 9), mais n'a jamais été traduite techniquement — `RelationDiagram.vue` génère un `classDiagram` Mermaid standard, sans directive de layout ni post-traitement, dont la disposition dépend du layout automatique (dagre, hiérarchique) de Mermaid, sans garantie de répartition en étoile. Passée inaperçue en Phase 9 faute de modèle de démo avec plusieurs relations vers des modèles distincts (`Category` en a deux, mais toutes deux vers `Product`) permettant de l'observer visuellement. Cf. Phase 9bis ci-dessous.
+- **EX-448 à EX-451** (module 4, « Disposition en colonnes de la fiche détail et du formulaire », ex-EX-454 à EX-457) — non développées, absentes de toute phase de cette roadmap jusqu'à cette revue ; `ItemDetail.vue`/`ItemForm.vue` utilisent actuellement `.field-grid`, une grille fixe à 2 colonnes (étiquette/valeur) par champ empilé verticalement, pas une grille multi-champs responsive. Cf. Phase 14 ci-dessous.
 
 ## Architecture technique retenue
 
@@ -41,6 +50,9 @@ Les exigences EX-437 à EX-447 (module 4 — gestion des items soft-deleted, mis
 | 11    | Filtrage et tri des items      | ✅ fait    |
 | 12    | Items soft-deleted             | ✅ fait    |
 | 13    | Cache Scout à la demande       | ✅ fait    |
+| 9bis  | Revoir diagramme de relations  | ⬜ à faire |
+| 14    | Disposition item en colonnes   | ⬜ à faire |
+| 15    | Pagination avancée du listing  | ⬜ à faire |
 
 ---
 
@@ -254,6 +266,7 @@ Points d'attention :
 - **Vérifié manuellement contre l'environnement `docker-compose` réel** (pas seulement les tests sqlite) : `GET /connections/mysql/models/Category/relations` et `.../models/Product/relations` reflètent correctement `Category::products()` (`HasMany`) et `Product::category()` (`BelongsTo`) déjà déclarées dans l'app de démo ; `GET /connections/mysql/models/Category/items/1/relations/products` renvoie les produits réels de la catégorie (pagination, colonnes brutes) ; `GET /connections/pgsql/models/Author/items/1/relations/articles` confirme le fonctionnement sur l'autre connexion/moteur (pgsql, colonne JSON `metadata` en valeur brute non re-décodée) ; tentative de listing d'une relation `belongsTo` (`Product/items/1/relations/category`) confirmée en 404.
 - **Dépendance frontend ajoutée** : `mermaid` (`^11.16.0`, `frontend/package.json`) — installée via `npm install` dans le conteneur `frontend` (nécessaire depuis `frontend/`, pas depuis la racine du repo montée dans le même conteneur : une première tentative accidentelle depuis `/var/www` a créé un `package.json`/`node_modules` parasites à la racine du repo, nettoyés). Chunk client dédié (~680 Ko avant gzip, cf. `d3`/`dagre`/`cytoscape` embarqués par mermaid) chargé uniquement via l'`import()` dynamique de `RelationDiagram.vue`, jamais dans le bundle principal.
 - **Build front republié** : `./docker/build-front-package.sh` toujours inutilisable tel quel depuis ce shell Windows/WSL (même limite qu'en Phase 7, `docker run -v` sur un chemin UNC) — contournement identique : `docker exec` direct dans le conteneur `frontend` déjà démarré (`rm -rf .output .nuxt` puis `MODELBASE_PACKAGE_BUILD=true npx nuxt generate`, copie vers `resources/dist/modelbase/`, nouveau `rm -rf .output .nuxt`, redémarrage du conteneur pour repartir sur un serveur de dev propre — l'erreur transitoire `Pre-transform error: ... "#app-manifest"` observée juste après, déjà documentée dans le script, s'est de nouveau résorbée d'elle-même).
+- **EX-310 non couverte, révélé lors de la revue CTO du 2026-07-27** : cette phase a développé EX-306 à EX-309 (contenu du diagramme) mais pas EX-310 (disposition en étoile). `RelationDiagram.vue` laisse Mermaid disposer librement les classes (layout dagre par défaut d'un `classDiagram`), sans jamais forcer le modèle courant au centre ni les modèles liés sur un même niveau autour de lui. Non détecté à l'époque : aucun modèle de démo ne déclare plusieurs relations vers des modèles distincts (seul `Category` a deux relations, toutes deux vers `Product`), ce qui ne permet pas d'observer visuellement si une étoile se forme ou non. Cf. Phase 9bis.
 
 ## Phase 10 — Compatibilité Laravel 11/12/13 (technique, sans exigence SFD dédiée)
 
@@ -335,3 +348,34 @@ Points d'attention :
 - **`laravel/scout` en dépendance de développement du plug-in** (`composer.json`, `require-dev`), jamais en dépendance de production : la détection du trait (`ModelTraitInspector::uses()`) et la référence `Laravel\Scout\Searchable::class` ne nécessitent pas que la classe existe réellement (`::class` sur un nom pleinement qualifié ne déclenche jamais l'auto-chargement) — un modèle hôte qui n'installe pas Scout n'utilise de toute façon pas ce trait, donc `is_searchable` y vaut naturellement toujours `false`, sans erreur. Seuls les tests du plug-in ont besoin du vrai trait pour être représentatifs.
 - **Vérifié manuellement contre l'environnement `docker-compose` réel (mysql)**, pas seulement via les tests sqlite : `GET /connections/mysql/models/Product/items/1` confirme `is_searchable: true` (`Category`, sans le trait : `false`) ; `POST /connections/mysql/models/Product/items/1/reindex` renvoie 200 (`{"message":"Index mis à jour."}`) ; `POST .../models/Category/items/1/reindex` (modèle sans `Searchable`) et `POST .../models/Product/items/9999/reindex` (item inconnu) renvoient tous deux 404 ; `php artisan tinker` confirme que `class_uses_recursive()` détecte bien `Laravel\Scout\Searchable` sur une instance réelle de `Product` et que `->searchable()` s'exécute sans erreur avec le driver `database` configuré. Rendu front confirmé via `curl` authentifié sur le conteneur `frontend` (port 3000, HTML SSR) : le bouton « Réindexer » est présent sur la fiche détail d'un `Product` (`Searchable`), absent sur celle d'une `Category` (sans le trait) — clic non observé visuellement dans un navigateur réel (`chromium-cli` indisponible dans cet environnement, limite déjà documentée Phases 6/7/8/9/11/12).
 - Build front republié (`resources/dist/modelbase/`) via le même contournement `docker exec` déjà documenté (Phases 7/9) pour ce shell Windows/WSL.
+
+## Phase 9bis — Diagramme de relations : disposition en étoile (module 3, EX-310)
+
+Identifiée lors de la revue CTO du 2026-07-27 : EX-310 fait partie du même lot SFD qu'EX-306 à EX-309 (Phase 9, close), mais n'a jamais été traduite techniquement — cf. point d'attention ajouté rétroactivement en Phase 9 ci-dessus.
+
+- [ ] Le modèle courant est positionné visuellement au centre du diagramme, les modèles liés autour de lui sur un même niveau (EX-310) — un `classDiagram` Mermaid standard (layout dagre) ne le garantit pas ; options à trancher avec l'utilisateur : (a) construire le diagramme via un type Mermaid offrant un contrôle de position plus direct (ex. `flowchart` avec un sous-graphe centré, au prix de perdre la sémantique « diagramme de classe » d'EX-307), (b) post-traiter le SVG généré (repositionnement manuel des nœuds après rendu), ou (c) changer de bibliothèque de rendu pour un layout radial natif. Point ouvert, aucune option engagée à ce jour.
+- [ ] Vérification indépendante du sens de la relation (limite déjà actée en SFD) : un modèle source et un modèle cible de la relation doivent être positionnés de façon équivalente autour du modèle courant.
+- [ ] Étendre les fixtures de démo avec au moins un modèle déclarant des relations vers plusieurs modèles distincts (la démo actuelle n'a que `Category` avec deux relations, toutes deux vers `Product`) pour pouvoir vérifier visuellement qu'une étoile à plusieurs branches se forme réellement, y compris avec des types de relation non encore couverts en démo (`belongsToMany`, `hasManyThrough`, `morphMany`/`morphOne`).
+
+## Phase 14 — Disposition en colonnes de la fiche détail et du formulaire (module 4, EX-448 à EX-451)
+
+Identifiée lors de la revue CTO du 2026-07-27 comme absente de toute phase existante.
+
+- [ ] Répartition des champs de la fiche détail (EX-406 à EX-410) et du formulaire (EX-412 à EX-417) sur plusieurs colonnes visuelles occupant la largeur disponible (EX-448) — `ItemDetail.vue`/`ItemForm.vue` utilisent aujourd'hui `.field-grid` (`frontend/assets/css/main.css`), une grille fixe à 2 colonnes (étiquette/valeur) par champ empilé verticalement : pas encore une grille multi-champs
+- [ ] Recalcul du nombre de colonnes visuelles selon la largeur d'écran, repli sur une colonne unique sur écran étroit (EX-449) — aucune `@media` dédiée à ce jour (la seule `@media` de `main.css` porte sur le mode sombre, EX-108)
+- [ ] Le champ à rendu volumineux (éditeur JSON, EX-414) occupe toute la largeur de la grille plutôt que de partager une colonne visuelle (EX-450)
+- [ ] L'ordre des champs dans la grille suit l'ordre d'exposition des colonnes du modèle (EX-422), sans réordonnancement propre à l'affichage en colonnes (EX-451)
+- [ ] Limite SFD à respecter : les tableaux d'objets liés (EX-425 à EX-431) conservent leur disposition pleine largeur actuelle, cette exigence ne les concerne pas
+- Tests à prévoir : pas de harnais de test front existant (limite déjà documentée Phases 5/6/7/8/9), vérification probablement manuelle comme pour les autres phases purement front
+
+## Phase 15 — Pagination avancée du listing des items (module 4, EX-452 à EX-456)
+
+Déjà identifiée précédemment (cf. en-tête de ce document), formalisée ici en phase à part entière lors de la revue CTO du 2026-07-27.
+
+- [ ] Choix du nombre de lignes par page parmi un ensemble de valeurs prédéfinies (EX-452) — `ItemPagination.vue` n'offre aujourd'hui que précédent/suivant, `meta.per_page` n'y est pas modifiable ; valeurs prédéfinies à choisir avec l'utilisateur (limite SFD : ex. 10/25/50/100, non figé)
+- [ ] Accès direct à n'importe quelle page sans navigation page par page (EX-453)
+- [ ] Repli sur la première/dernière page si le numéro demandé est hors bornes, sans erreur (EX-454)
+- [ ] Mémorisation du nombre de lignes par page choisi, réappliqué aux accès ultérieurs (EX-455)
+- [ ] Mémorisation propre à chaque contexte de listing — un modèle donné en listing standard, une relation donnée en tableau d'objets liés — jamais une valeur unique partagée par l'utilisateur (EX-456, ex-EX-462, périmètre tranché le 2026-07-25) — mécanisme à construire (`localStorage`, clé composée du contexte) : aucun trouvé à ce jour dans le front
+- [ ] Application transversale aux deux listings concernés : listing standard (EX-403), tableaux d'objets liés (EX-429)
+- Tests à prévoir : Feature pour la persistance/les bornes de page côté API si applicable, vérification manuelle front (pas de harnais de test front existant)
