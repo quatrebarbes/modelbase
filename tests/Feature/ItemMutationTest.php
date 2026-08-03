@@ -49,13 +49,13 @@ class ItemMutationTest extends TestCase
             $table->decimal('price');
             $table->json('metadata')->nullable();
             // Colonne volontairement absente de $fillable (cf. putModel()
-            // ci-dessous) pour vérifier EX-421 : une colonne non fillable,
+            // ci-dessous) pour vérifier EX-464 : une colonne non fillable,
             // hors colonnes techniques (EX-416), est traitée en lecture seule.
             // Déclarée dans $casts (sans effet sur son comportement, un cast
             // 'string' sur une colonne déjà string) uniquement pour rester
             // exposée au sens d'EX-422 (colonnes lues depuis le code hôte) :
             // sans ce cast, colonnesFor() l'exclurait purement et simplement
-            // du listing/de la fiche détail, empêchant de vérifier EX-421.
+            // du listing/de la fiche détail, empêchant de vérifier EX-464.
             $table->string('internal_note')->nullable();
             $table->timestamps();
         });
@@ -168,7 +168,7 @@ class ItemMutationTest extends TestCase
     }
 
     /**
-     * EX-421 : `internal_note` n'est pas dans $fillable (cf. putModel()) —
+     * EX-421/EX-464 : `internal_note` n'est pas dans $fillable (cf. putModel()) —
      * signalée comme non fillable, au même titre qu'une colonne technique
      * pour le rendu en lecture seule côté front.
      */
@@ -224,7 +224,7 @@ class ItemMutationTest extends TestCase
     }
 
     /**
-     * EX-421 : une colonne non fillable côté modèle hôte (ici `internal_note`,
+     * EX-421/EX-464 : une colonne non fillable côté modèle hôte (ici `internal_note`,
      * cf. putModel()) est ignorée à la création, comme une colonne technique.
      */
     public function test_it_ignores_a_submitted_non_fillable_column_on_create(): void
@@ -311,7 +311,7 @@ class ItemMutationTest extends TestCase
     }
 
     /**
-     * EX-421 : même principe que test_it_ignores_a_submitted_non_fillable_column_on_create()
+     * EX-421/EX-464 : même principe que test_it_ignores_a_submitted_non_fillable_column_on_create()
      * pour la modification.
      */
     public function test_it_ignores_a_submitted_non_fillable_column_on_update(): void

@@ -11,17 +11,42 @@ type ItemValue = {
   value: unknown
   is_null: boolean
   foreign_key?: ForeignKey
+  // EX-450 : texte long (colonne SQL text/mediumtext/longtext), par
+  // opposition à varchar/char — reste de type 'string' (EX-407), seul le
+  // rendu en grille en tient compte (pleine largeur, fin de grille).
+  long?: boolean
 }
 
-defineProps<{
+const props = defineProps<{
   connection: string
   values: ItemValue[]
 }>()
+
+function isWide(entry: ItemValue): boolean {
+  return entry.type === 'json' || entry.long === true
+}
+
+// EX-451 (exception) : les champs à rendu volumineux (JSON, texte long —
+// pleine largeur de la grille, EX-450) sont replacés en fin de grille plutôt
+// que laissés à leur position naturelle — un champ pleine largeur au milieu
+// de la grille aurait forcé les champs suivants à repartir en début de
+// rangée, quelle que soit leur affinité avec ceux déjà en place sur cette
+// même rangée. L'ordre relatif des champs non concernés entre eux, lui, reste
+// celui exposé par le modèle ; de même entre eux pour les champs replacés.
+const orderedValues = computed(() => [
+  ...props.values.filter((entry) => !isWide(entry)),
+  ...props.values.filter((entry) => isWide(entry)),
+])
 </script>
 
 <template>
   <dl class="item-detail field-grid">
-    <template v-for="entry in values" :key="entry.column">
+    <div
+      v-for="entry in orderedValues"
+      :key="entry.column"
+      class="field-grid__field"
+      :class="{ 'field-grid__field--wide': isWide(entry) }"
+    >
       <dt class="field-grid__label">{{ entry.column }}</dt>
       <dd>
         <!-- EX-409 : rendu distinct d'une valeur nulle vs une chaîne vide -->
@@ -46,7 +71,7 @@ defineProps<{
         <span v-else-if="entry.value === ''" class="item-detail__empty-string">{{ $t('itemDetail.emptyString') }}</span>
         <span v-else>{{ entry.value }}</span>
       </dd>
-    </template>
+    </div>
   </dl>
 </template>
 

@@ -68,13 +68,13 @@ class ItemRepositoryTest extends TestCase
             $table->string('name')->unique();
             $table->string('description')->nullable();
             // Colonne volontairement absente de $fillable (cf. putModel()
-            // ci-dessous) pour vérifier EX-421 : une colonne non fillable,
+            // ci-dessous) pour vérifier EX-464 : une colonne non fillable,
             // hors colonnes techniques (EX-416), est traitée en lecture seule.
             // Déclarée dans $casts (sans effet sur son comportement, un cast
             // 'string' sur une colonne déjà string) uniquement pour rester
             // exposée au sens d'EX-422 (colonnes lues depuis le code hôte) :
             // sans ce cast, columnsFor() l'exclurait purement et simplement
-            // du listing/de la fiche détail, empêchant de vérifier EX-421.
+            // du listing/de la fiche détail, empêchant de vérifier EX-464.
             $table->string('internal_note')->nullable();
             // Volontairement sans contrainte FK réelle en base (pas de
             // constrained()), contrairement à category_id ci-dessus : sert à
@@ -567,7 +567,7 @@ class ItemRepositoryTest extends TestCase
     }
 
     /**
-     * EX-421 : une colonne absente de $fillable côté modèle hôte (ici
+     * EX-421/EX-464 : une colonne absente de $fillable côté modèle hôte (ici
      * `internal_note`, cf. putModel()) est signalée comme non fillable, au
      * même titre qu'une colonne technique pour le rendu en lecture seule.
      */
@@ -684,7 +684,7 @@ class ItemRepositoryTest extends TestCase
     }
 
     /**
-     * EX-421 : `internal_note` n'est pas dans $fillable (cf. putModel()) —
+     * EX-421/EX-464 : `internal_note` n'est pas dans $fillable (cf. putModel()) —
      * traitée en lecture seule au même titre qu'une colonne technique.
      */
     public function test_create_ignores_a_submitted_non_fillable_column(): void

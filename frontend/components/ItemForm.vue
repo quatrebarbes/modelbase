@@ -9,12 +9,24 @@ type ColumnSchema = {
   technical: boolean
   fillable: boolean
   foreign_key?: { table: string; model: string | null }
+  // EX-463 : texte long (colonne SQL text/mediumtext/longtext), par
+  // opposition à varchar/char — reste de type 'string' (EX-407), rendu en
+  // éditeur multiligne plutôt qu'un simple champ texte.
+  long?: boolean
 }
 
-// EX-421 : une colonne non fillable côté modèle hôte, hors colonne technique
+// EX-464 : une colonne non fillable côté modèle hôte, hors colonne technique
 // (déjà couverte par EX-416), est traitée en lecture seule au même titre.
 function isReadOnly(column: ColumnSchema): boolean {
   return column.technical || !column.fillable
+}
+
+function isLongText(column: ColumnSchema): boolean {
+  return column.type === 'string' && column.long === true
+}
+
+function isWide(column: ColumnSchema): boolean {
+  return column.type === 'json' || isLongText(column)
 }
 
 const props = withDefaults(defineProps<{
@@ -70,18 +82,32 @@ function handleSubmit(): void {
 
   emit('submit', { ...values })
 }
+
+// EX-451 (exception) : les colonnes à rendu volumineux (JSON, texte long —
+// pleine largeur de la grille, EX-450) sont replacées en fin de grille plutôt
+// que laissées à leur position naturelle — même raisonnement que
+// ItemDetail.vue.
+const orderedColumns = computed(() => [
+  ...props.columns.filter((column) => !isWide(column)),
+  ...props.columns.filter((column) => isWide(column)),
+])
 </script>
 
 <template>
   <form class="item-form field-grid" @submit.prevent="handleSubmit">
-    <div v-for="column in columns" :key="column.column" class="item-form__field">
-      <label :for="`field-${column.column}`" class="field-grid__label">
-        {{ column.column }}
-        <!-- EX-416 : colonnes techniques affichées mais non modifiables -->
-        <span v-if="column.technical" class="item-form__technical">{{ $t('itemForm.technicalReadOnly') }}</span>
-        <!-- EX-421 : colonne non fillable côté modèle hôte, non modifiable au même titre -->
-        <span v-else-if="!column.fillable" class="item-form__technical">{{ $t('itemForm.notEditable') }}</span>
-      </label>
+    <!-- EX-450 : l'éditeur JSON/texte long occupe toute la largeur de la grille. -->
+    <div
+      v-for="column in orderedColumns"
+      :key="column.column"
+      class="field-grid__field"
+      :class="{ 'field-grid__field--wide': isWide(column) }"
+    >
+      <!-- L'annotation technique/lecture seule est affichée sous le contrôle
+           (cf. ci-dessous) plutôt que dans le libellé : un libellé toujours
+           sur une seule ligne garde les contrôles de la même rangée de la
+           grille alignés à la même hauteur, quel que soit le nombre de
+           champs annotés parmi eux. -->
+      <label :for="`field-${column.column}`" class="field-grid__label">{{ column.column }}</label>
 
       <div class="item-form__control">
         <!-- EX-415 : sélecteur d'item existant pour une colonne FK -->
@@ -131,6 +157,17 @@ function handleSubmit(): void {
           @input="updateJsonDraft(column.column, ($event.target as HTMLTextAreaElement).value)"
         />
 
+        <!-- EX-463 : un champ de texte long (SQL text/mediumtext/longtext)
+             est rendu en éditeur multiligne plutôt qu'un simple champ texte. -->
+        <textarea
+          v-else-if="isLongText(column)"
+          :id="`field-${column.column}`"
+          :value="values[column.column] ?? ''"
+          :disabled="isReadOnly(column) || disabled"
+          rows="4"
+          @input="values[column.column] = ($event.target as HTMLTextAreaElement).value"
+        />
+
         <input
           v-else
           :id="`field-${column.column}`"
@@ -139,6 +176,11 @@ function handleSubmit(): void {
           :disabled="isReadOnly(column) || disabled"
           @input="values[column.column] = ($event.target as HTMLInputElement).value"
         >
+
+        <!-- EX-416 : colonnes techniques affichées mais non modifiables -->
+        <p v-if="column.technical" class="item-form__technical">{{ $t('itemForm.technicalReadOnly') }}</p>
+        <!-- EX-464 : colonne non fillable côté modèle hôte, non modifiable au même titre -->
+        <p v-else-if="!column.fillable" class="item-form__technical">{{ $t('itemForm.notEditable') }}</p>
 
         <p v-if="column.type === 'json' && jsonErrors[column.column]" class="item-form__error">{{ $t('itemForm.invalidJson') }}</p>
         <!-- EX-417 : erreurs de validation natives de la colonne, remontées telles quelles -->
@@ -166,13 +208,8 @@ function handleSubmit(): void {
 </template>
 
 <style scoped>
-.item-form__field {
-  display: contents;
-}
-
 .item-form__technical {
-  display: block;
-  font-weight: 400;
+  margin: 0;
   font-size: 0.8rem;
   font-style: italic;
   color: var(--color-text-muted);

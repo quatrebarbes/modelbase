@@ -21,7 +21,7 @@ use Throwable;
 class ColumnIntrospector
 {
     /**
-     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null}>
+     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>
      */
     public function forTable(string $connection, string $table): array
     {
@@ -37,6 +37,13 @@ class ColumnIntrospector
                     'type' => ($foreignKey !== null ? ColumnType::FOREIGN_KEY : $this->scalarType($column))->value,
                     'is_foreign_key' => $foreignKey !== null,
                     'foreign_key' => $foreignKey,
+                    // EX-450/EX-463 : signale une colonne de texte long (SQL
+                    // text/mediumtext/longtext, par opposition à varchar/char)
+                    // — un rendu adapté (EX-407) en tire parti côté front
+                    // (éditeur multiligne EX-463, réordonnancement EX-451)
+                    // sans en faire un type de rendu à part (reste
+                    // ColumnType::STRING).
+                    'long' => $this->isLongText($column),
                 ];
             })
             ->all();
@@ -142,5 +149,19 @@ class ColumnIntrospector
             ], true) => ColumnType::NUMBER,
             default => ColumnType::STRING,
         };
+    }
+
+    /**
+     * EX-450/EX-463 : `text`/`mediumtext`/`longtext` sur les trois drivers réellement
+     * testés (mysql, sqlite, pgsql — ce dernier ne distinguant pas les
+     * tailles, `mediumText()`/`longText()` y compilent tous deux en `text`) ;
+     * `tinytext` (capacité comparable à `varchar`, 255 caractères) n'est
+     * volontairement pas incluse.
+     *
+     * @param  array{type: string, type_name: string}  $column
+     */
+    private function isLongText(array $column): bool
+    {
+        return in_array(strtolower($column['type_name']), ['text', 'mediumtext', 'longtext'], true);
     }
 }

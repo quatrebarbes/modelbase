@@ -283,8 +283,8 @@ class ItemRepository
      * EX-424/EX-412/EX-417/EX-421 : crée un item à partir des valeurs
      * soumises, via une instance Eloquent réelle du modèle hôte
      * (fill()+save()) pour déclencher creating/created. Les colonnes
-     * techniques (EX-416) et non fillable (EX-421) sont ignorées si elles
-     * sont soumises malgré tout — les horodatages restent gérés
+     * techniques (EX-416) et non fillable (EX-421/EX-464) sont ignorées si
+     * elles sont soumises malgré tout — les horodatages restent gérés
      * nativement par Eloquent (cf. disableTimestampsIfColumnsMissing()) ;
      * seule la clé primaire n'est jamais modifiable. Aucune validation
      * propre au plug-in : les valeurs sont écrites telles quelles, la
@@ -317,7 +317,7 @@ class ItemRepository
     }
 
     /**
-     * EX-424/EX-413/EX-417/EX-421 : modifie les valeurs d'un item existant,
+     * EX-424/EX-413/EX-417/EX-421/EX-464 : modifie les valeurs d'un item existant,
      * via l'instance Eloquent résolue (fill()+save()) pour déclencher
      * updating/updated — même principe que create() pour les colonnes
      * techniques/non fillable et l'absence de validation propre au plug-in.
@@ -436,7 +436,7 @@ class ItemRepository
      * (jamais fillable, jamais castée, ni technique, ni clé étrangère
      * déclarée) disparaît donc entièrement du listing/de la fiche détail/du
      * formulaire, plutôt que d'être seulement affichée en lecture seule
-     * (EX-421/EX-416) : lecture assumée d'EX-422 après clarification, la
+     * (EX-464/EX-416) : lecture assumée d'EX-422 après clarification, la
      * tension avec EX-401/EX-406 (« toutes les colonnes ») étant résolue en
      * faveur de la fidélité au code hôte.
      *
@@ -447,7 +447,7 @@ class ItemRepository
      * contrainte quand les deux existent (cf. `ColumnIntrospector::
      * relationForeignKeys()`).
      *
-     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null}>
+     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>
      */
     private function columnsFor(string $connection, Model $instance): array
     {
@@ -478,7 +478,7 @@ class ItemRepository
     }
 
     /**
-     * EX-416/EX-421 : ne conserve, parmi les valeurs soumises, que celles
+     * EX-416/EX-421/EX-464 : ne conserve, parmi les valeurs soumises, que celles
      * correspondant à une colonne réelle de la table, qui n'est pas une
      * colonne technique (clé primaire, horodatages — gérées par ce
      * repository ou non modifiables du tout) et que le modèle hôte autorise
@@ -490,7 +490,7 @@ class ItemRepository
      * préalable produirait une valeur doublement encodée.
      *
      * @param  array<string, mixed>  $values
-     * @param  array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null}>  $columnDefinitions
+     * @param  array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>  $columnDefinitions
      * @return array<string, mixed>
      */
     private function writable(array $values, Model $instance, array $columnDefinitions): array
@@ -562,7 +562,7 @@ class ItemRepository
     }
 
     /**
-     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null}  $column
+     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}  $column
      * @param  array<int, string>  $technical
      */
     private function describeColumn(string $connection, array $column, array $technical, Model $instance): array
@@ -572,6 +572,7 @@ class ItemRepository
             'type' => $column['type'],
             'technical' => in_array($column['name'], $technical, true), // EX-416
             'fillable' => $instance->isFillable($column['name']), // EX-421
+            'long' => $column['long'], // EX-450/EX-463 : texte long (SQL text/mediumtext/longtext)
         ];
 
         if ($column['is_foreign_key']) {
@@ -587,7 +588,7 @@ class ItemRepository
     }
 
     /**
-     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null}  $column
+     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}  $column
      * @param  array<int, string>  $technical
      */
     private function decorate(Connection $db, string $connection, array $column, mixed $value, array $technical, Model $instance): array

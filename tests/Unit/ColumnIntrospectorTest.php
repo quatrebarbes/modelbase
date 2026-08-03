@@ -45,12 +45,13 @@ class ColumnIntrospectorTest extends TestCase
             $table->boolean('active');
             $table->json('metadata')->nullable();
             $table->timestamp('published_at')->nullable();
+            $table->text('description')->nullable();
             $table->softDeletes();
         });
     }
 
     /**
-     * @return array<string, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null}>
+     * @return array<string, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>
      */
     private function describeProducts(): array
     {
@@ -88,6 +89,24 @@ class ColumnIntrospectorTest extends TestCase
 
         $this->assertFalse($columns['name']['is_foreign_key']);
         $this->assertNull($columns['name']['foreign_key']);
+    }
+
+    /**
+     * EX-450/EX-463 : une colonne SQL `text` (par opposition à `varchar`/`char`) est
+     * signalée comme texte long, indépendamment de son type de rendu (reste
+     * ColumnType::STRING) — sqlite ne distingue pas `text()`/`mediumText()`/
+     * `longText()` au niveau du type déclaré (les trois compilent en `text`,
+     * cf. SQLiteGrammar), seul `text()` est donc exercé ici ; le comportement
+     * des variantes est vérifié séparément contre mysql/pgsql réels (cf.
+     * docs/roadmap.md).
+     */
+    public function test_it_detects_a_long_text_column(): void
+    {
+        $columns = $this->describeProducts();
+
+        $this->assertTrue($columns['description']['long']);
+        $this->assertFalse($columns['name']['long']);
+        $this->assertFalse($columns['price']['long']);
     }
 
     /**

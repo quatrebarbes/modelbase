@@ -174,20 +174,35 @@ body {
   border-color: var(--color-border-focus);
 }
 
-/* Grille label/valeur à 2 colonnes (fiche détail d'item, formulaire d'item) */
+/* Grille de champs (fiche détail d'item, formulaire d'item) — EX-448 : autant
+   de champs par ligne que la largeur disponible le permet ; EX-449 : le
+   nombre de colonnes se recalcule avec la largeur, jusqu'au repli sur une
+   colonne unique sous la largeur minimale d'un champ (`auto-fill`, sans
+   media query dédiée). */
 .field-grid {
   display: grid;
-  grid-template-columns: minmax(9rem, max-content) minmax(0, 28rem);
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
   align-items: start;
-  column-gap: 1.25rem;
-  row-gap: 1rem;
-  max-width: 42rem;
+  gap: 1rem 1.5rem;
+}
+
+/* Un champ = étiquette + valeur/contrôle empilés verticalement, unité
+   déplacée dans la grille de champs ci-dessus. */
+.field-grid__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+/* EX-450 : un champ à rendu volumineux (ex. éditeur JSON) occupe toute la
+   largeur de la grille plutôt que de partager une colonne visuelle. */
+.field-grid__field--wide {
+  grid-column: 1 / -1;
 }
 
 .field-grid__label {
-  padding-top: 0.5rem;
   font-weight: 600;
-  text-align: right;
 }
 
 /* Boutons d'action (formulaires, fiche détail) */
