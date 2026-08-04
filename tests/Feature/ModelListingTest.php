@@ -2,6 +2,7 @@
 
 namespace Quatrebarbes\Modelbase\Tests\Feature;
 
+use Quatrebarbes\Modelbase\Support\ItemCountEstimator;
 use Quatrebarbes\Modelbase\Tests\TestCase;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -116,9 +117,33 @@ class ModelListingTest extends TestCase
         $response->assertJsonFragment([
             'name' => 'Doohickey',
             'table' => 'widgets',
-            'item_count' => 2,
+            'item_count' => '2',
             'column_count' => 4,
         ]);
+    }
+
+    public function test_item_count_is_approximated_above_the_ex_312_threshold(): void
+    {
+        $this->mock(ItemCountEstimator::class)->shouldReceive('estimate')->andReturn(42_000);
+
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('primary'));
+
+        $response->assertOk();
+        $response->assertJsonFragment(['name' => 'Doohickey', 'item_count' => '42K']);
+    }
+
+    public function test_item_count_stays_exact_below_the_ex_312_threshold(): void
+    {
+        $this->mock(ItemCountEstimator::class)->shouldReceive('estimate')->andReturn(null);
+
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('primary'));
+
+        $response->assertOk();
+        $response->assertJsonFragment(['name' => 'Doohickey', 'item_count' => '2']);
     }
 
     public function test_multiple_models_on_the_same_table_are_listed_as_distinct_entries(): void

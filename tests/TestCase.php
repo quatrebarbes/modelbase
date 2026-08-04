@@ -22,6 +22,14 @@ abstract class TestCase extends BaseTestCase
     protected function defineEnvironment($app): void
     {
         $app['config']->set('app.key', 'base64:'.base64_encode(str_repeat('a', 32)));
+
+        // Phase 17 : cache de découverte des modèles désactivé par défaut en
+        // test (résultats attendus immédiatement après écriture d'un fichier
+        // de modèle factice) ; réactivé explicitement par les tests qui
+        // vérifient le cache lui-même. Store 'array' pour ne dépendre
+        // d'aucune table de cache migrée.
+        $app['config']->set('cache.default', 'array');
+        $app['config']->set('modelbase.model_discovery_cache_ttl', 0);
     }
 
     /**

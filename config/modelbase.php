@@ -52,4 +52,18 @@ return [
     */
     'connection_timeout' => env('MODELBASE_CONNECTION_TIMEOUT', 3),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Durée de cache de la découverte des modèles (secondes)
+    |--------------------------------------------------------------------------
+    |
+    | Phase 17 : évite de rescanner le répertoire app/Models (et de
+    | réinstancier chaque classe via Reflection) à chaque requête HTTP. Les
+    | modèles déclarés par l'app hôte ne changent qu'au déploiement, une
+    | courte durée suffit donc à absorber la charge sans imposer de vidage de
+    | cache explicite après un déploiement. `0` désactive le cache.
+    |
+    */
+    'model_discovery_cache_ttl' => env('MODELBASE_MODEL_DISCOVERY_CACHE_TTL', 60),
+
 ];

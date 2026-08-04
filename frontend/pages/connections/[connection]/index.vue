@@ -1,5 +1,7 @@
 <script setup lang="ts">
-// EX-301/EX-302/EX-304 : liste des modèles d'une connexion, filtrable par nom ou par table.
+// EX-301/EX-302/EX-304 : liste des modèles d'une connexion, filtrable par nom
+// ou par table. Un seul appel API (Phase 17) : le filtre s'applique ensuite
+// côté client sur la liste déjà chargée, sans nouvel appel à chaque frappe.
 const route = useRoute()
 const connection = route.params.connection as string
 
@@ -7,24 +9,24 @@ const api = useApiClient()
 const { t } = useI18n()
 const search = ref('')
 
-// Attend une pause de frappe avant d'interroger l'API, pour ne pas relancer
-// une requête à chaque caractère tapé.
-const debouncedSearch = ref('')
-let debounceTimer: ReturnType<typeof setTimeout>
-watch(search, (value) => {
-  clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => { debouncedSearch.value = value }, 300)
-})
-
 const { data, pending } = await useAsyncData(
-  () => `models-${connection}-${debouncedSearch.value}`,
-  () => api(`/connections/${connection}/models`, {
-    query: debouncedSearch.value ? { search: debouncedSearch.value } : {},
-  }),
-  { watch: [debouncedSearch] }
+  () => `models-${connection}`,
+  () => api(`/connections/${connection}/models`)
 )
 
-const models = computed(() => data.value?.data ?? [])
+const allModels = computed(() => data.value?.data ?? [])
+
+const models = computed(() => {
+  const needle = search.value.trim().toLowerCase()
+
+  if (!needle) {
+    return allModels.value
+  }
+
+  return allModels.value.filter((model: { name: string, table: string }) =>
+    model.name.toLowerCase().includes(needle) || model.table.toLowerCase().includes(needle)
+  )
+})
 
 useHead({ title: t('models.title', { connection }) })
 </script>

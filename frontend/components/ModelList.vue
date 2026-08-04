@@ -2,7 +2,7 @@
 type ModelSummary = {
   name: string
   table: string
-  item_count: number
+  item_count: string
   column_count: number
 }
 

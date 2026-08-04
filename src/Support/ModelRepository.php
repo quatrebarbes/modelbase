@@ -2,27 +2,47 @@
 
 namespace Quatrebarbes\Modelbase\Support;
 
+use Illuminate\Database\Connection;
+use Illuminate\Support\Facades\DB;
+
 /**
  * Assemble le listing des modèles Eloquent déclarés par l'application hôte
- * pour une connexion donnée (EX-301), avec nom, nombre d'items et nombre de
- * colonnes de la table associée (EX-302), filtrable par nom ou par nom de
- * table (EX-304). Deux classes Eloquent déclarées pointant vers la même
- * table donnent deux entrées distinctes : le listing est construit par
- * classe, jamais dédupliqué par table.
+ * pour une connexion donnée (EX-301), avec nom, nombre d'items (EX-302,
+ * approché pour une grande table, EX-312) et nombre de colonnes de la table
+ * associée, filtrable par nom ou par nom de table (EX-304). Deux classes
+ * Eloquent déclarées pointant vers la même table donnent deux entrées
+ * distinctes : le listing est construit par classe, jamais dédupliqué par
+ * table.
  */
 class ModelRepository
 {
-    public function __construct(private EloquentModelFinder $models)
-    {
+    /**
+     * En-deçà de ce nombre, un comptage exact reste peu coûteux : on ignore
+     * l'estimation moteur (EX-312) et on compte réellement, pour ne jamais
+     * afficher une valeur fantaisiste sur une table de petite taille (le cas
+     * le plus courant).
+     */
+    private const EXACT_COUNT_THRESHOLD = 1_000;
+
+    public function __construct(
+        private EloquentModelFinder $models,
+        private ItemCountEstimator $itemCounts,
+    ) {
     }
 
     /**
-     * @return array<int, array{name: string, table: string, item_count: int, column_count: int}>
+     * @return array<int, array{name: string, table: string, item_count: string, column_count: int}>
      */
     public function forConnection(string $connection, ?string $search = null): array
     {
-        return collect($this->models->forConnection($connection))
-            ->map(fn (string $class) => $this->describe($class))
+        $classes = $this->models->forConnection($connection);
+
+        // Une seule requête pour l'ensemble des modèles de la connexion,
+        // plutôt qu'un hasTable() par modèle (N+1 corrigé en Phase 17).
+        $existingTables = $classes === [] ? [] : $this->existingTables($connection);
+
+        return collect($classes)
+            ->map(fn (string $class) => $this->describe($class, $existingTables))
             ->when(
                 $search !== null && $search !== '',
                 fn ($models) => $models->filter(
@@ -35,10 +55,21 @@ class ModelRepository
     }
 
     /**
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $class
-     * @return array{name: string, table: string, item_count: int, column_count: int}
+     * @return array<string, true> table name (minuscule) => true
      */
-    private function describe(string $class): array
+    private function existingTables(string $connection): array
+    {
+        $tables = DB::connection($connection)->getSchemaBuilder()->getTableListing(schemaQualified: false);
+
+        return array_fill_keys(array_map('strtolower', $tables), true);
+    }
+
+    /**
+     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $class
+     * @param  array<string, true>  $existingTables
+     * @return array{name: string, table: string, item_count: string, column_count: int}
+     */
+    private function describe(string $class, array $existingTables): array
     {
         $instance = new $class;
         $table = $instance->getTable();
@@ -48,11 +79,11 @@ class ModelRepository
         // réelle (ex. table pas encore migrée en prod) : on l'affiche quand
         // même (EX-301/EX-305 lisent le code, pas la base) avec des
         // compteurs à 0 plutôt que de planter le listing entier.
-        if (! $connection->getSchemaBuilder()->hasTable($table)) {
+        if (! isset($existingTables[strtolower($table)])) {
             return [
                 'name' => class_basename($class),
                 'table' => $table,
-                'item_count' => 0,
+                'item_count' => ApproximateCount::format(0),
                 'column_count' => 0,
             ];
         }
@@ -60,8 +91,19 @@ class ModelRepository
         return [
             'name' => class_basename($class),
             'table' => $table,
-            'item_count' => $connection->table($table)->count(),
+            'item_count' => ApproximateCount::format($this->itemCount($connection, $table)),
             'column_count' => count($connection->getSchemaBuilder()->getColumnListing($table)),
         ];
+    }
+
+    private function itemCount(Connection $connection, string $table): int
+    {
+        $estimate = $this->itemCounts->estimate($connection, $table);
+
+        if ($estimate !== null && $estimate >= self::EXACT_COUNT_THRESHOLD) {
+            return $estimate;
+        }
+
+        return $connection->table($table)->count();
     }
 }

@@ -3,6 +3,7 @@
 namespace Quatrebarbes\Modelbase\Support;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use ReflectionClass;
@@ -16,10 +17,26 @@ use ReflectionClass;
  */
 class EloquentModelFinder
 {
+    private const CACHE_KEY = 'modelbase:models:all';
+
     /**
      * @return array<int, class-string<Model>>
      */
     public function all(): array
+    {
+        $ttl = (int) config('modelbase.model_discovery_cache_ttl', 60);
+
+        if ($ttl <= 0) {
+            return $this->scan();
+        }
+
+        return Cache::remember(self::CACHE_KEY, $ttl, fn () => $this->scan());
+    }
+
+    /**
+     * @return array<int, class-string<Model>>
+     */
+    private function scan(): array
     {
         // À voir plus tard : le traitement des apps qui stockeraient leurs
         // modèles ailleurs que dans le répertoire ad hoc

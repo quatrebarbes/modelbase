@@ -121,4 +121,36 @@ class EloquentModelFinderTest extends TestCase
 
         $this->assertSame([], (new EloquentModelFinder)->all());
     }
+
+    public function test_it_caches_the_discovered_models_when_ttl_is_positive(): void
+    {
+        config(['modelbase.model_discovery_cache_ttl' => 60]);
+        $namespace = app()->getNamespace();
+        $finder = new EloquentModelFinder;
+
+        $this->putModel($namespace, 'Cached');
+        $before = $finder->all();
+        $this->assertContains($namespace.'Models\\Cached', $before);
+
+        $this->putModel($namespace, 'AddedAfterCaching');
+        $after = $finder->all();
+
+        $this->assertNotContains($namespace.'Models\\AddedAfterCaching', $after);
+    }
+
+    public function test_it_bypasses_the_cache_when_ttl_is_zero(): void
+    {
+        config(['modelbase.model_discovery_cache_ttl' => 0]);
+        $namespace = app()->getNamespace();
+        $finder = new EloquentModelFinder;
+
+        $this->putModel($namespace, 'First');
+        $finder->all();
+
+        $this->putModel($namespace, 'Second');
+        $after = $finder->all();
+
+        $this->assertContains($namespace.'Models\\First', $after);
+        $this->assertContains($namespace.'Models\\Second', $after);
+    }
 }
