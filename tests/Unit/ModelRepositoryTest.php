@@ -84,6 +84,7 @@ class ModelRepositoryTest extends TestCase
 
         $this->assertSame('widgets', $models['Sprocket']['table']);
         $this->assertSame('1', $models['Sprocket']['item_count']);
+        $this->assertSame(1, $models['Sprocket']['item_count_raw']);
         $this->assertSame(4, $models['Sprocket']['column_count']);
     }
 
@@ -122,6 +123,7 @@ class ModelRepositoryTest extends TestCase
 
         $this->assertSame('ghosts', $models['Ghost']['table']);
         $this->assertSame('0', $models['Ghost']['item_count']);
+        $this->assertSame(0, $models['Ghost']['item_count_raw']);
         $this->assertSame(0, $models['Ghost']['column_count']);
     }
 
@@ -135,6 +137,7 @@ class ModelRepositoryTest extends TestCase
         $models = collect(app(ModelRepository::class)->forConnection('primary'))->keyBy('name');
 
         $this->assertSame('5K', $models['Sprocket']['item_count']);
+        $this->assertSame(5_000, $models['Sprocket']['item_count_raw']);
     }
 
     public function test_it_falls_back_to_an_exact_count_when_the_engine_estimate_is_below_the_threshold(): void

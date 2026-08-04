@@ -31,7 +31,7 @@ class ModelRepository
     }
 
     /**
-     * @return array<int, array{name: string, table: string, item_count: string, column_count: int}>
+     * @return array<int, array{name: string, table: string, item_count: string, item_count_raw: int, column_count: int}>
      */
     public function forConnection(string $connection, ?string $search = null): array
     {
@@ -67,7 +67,7 @@ class ModelRepository
     /**
      * @param  class-string<\Illuminate\Database\Eloquent\Model>  $class
      * @param  array<string, true>  $existingTables
-     * @return array{name: string, table: string, item_count: string, column_count: int}
+     * @return array{name: string, table: string, item_count: string, item_count_raw: int, column_count: int}
      */
     private function describe(string $class, array $existingTables): array
     {
@@ -84,14 +84,21 @@ class ModelRepository
                 'name' => class_basename($class),
                 'table' => $table,
                 'item_count' => ApproximateCount::format(0),
+                'item_count_raw' => 0,
                 'column_count' => 0,
             ];
         }
 
+        $itemCount = $this->itemCount($connection, $table);
+
         return [
             'name' => class_basename($class),
             'table' => $table,
-            'item_count' => ApproximateCount::format($this->itemCount($connection, $table)),
+            // Valeur numérique brute, en plus du formatage EX-312, pour un tri
+            // (EX-313/EX-316) cohérent avec la valeur affichée : `item_count`
+            // (ex. "1.2K") ne s'ordonne pas correctement lexicographiquement.
+            'item_count' => ApproximateCount::format($itemCount),
+            'item_count_raw' => $itemCount,
             'column_count' => count($connection->getSchemaBuilder()->getColumnListing($table)),
         ];
     }

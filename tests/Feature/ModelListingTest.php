@@ -118,11 +118,12 @@ class ModelListingTest extends TestCase
             'name' => 'Doohickey',
             'table' => 'widgets',
             'item_count' => '2',
+            'item_count_raw' => 2,
             'column_count' => 4,
         ]);
     }
 
-    public function test_item_count_is_approximated_above_the_ex_312_threshold(): void
+    public function test_item_count_is_approximated_above_the_ex_312_threshold_but_the_raw_value_stays_exact(): void
     {
         $this->mock(ItemCountEstimator::class)->shouldReceive('estimate')->andReturn(42_000);
 
@@ -131,7 +132,7 @@ class ModelListingTest extends TestCase
         $response = $this->actingAs($user)->getJson($this->endpoint('primary'));
 
         $response->assertOk();
-        $response->assertJsonFragment(['name' => 'Doohickey', 'item_count' => '42K']);
+        $response->assertJsonFragment(['name' => 'Doohickey', 'item_count' => '42K', 'item_count_raw' => 42_000]);
     }
 
     public function test_item_count_stays_exact_below_the_ex_312_threshold(): void
