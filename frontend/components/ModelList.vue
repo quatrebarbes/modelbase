@@ -2,6 +2,7 @@
 type ModelSummary = {
   name: string
   table: string
+  table_exists: boolean
   item_count: string
   item_count_raw: number
   column_count: number
@@ -15,6 +16,12 @@ const props = defineProps<{
 }>()
 
 function goToModel(model: ModelSummary) {
+  // limite EX-303/EX-305 : une table absente n'a pas de listing d'items à
+  // ouvrir, la ligne n'est donc pas navigable.
+  if (!model.table_exists) {
+    return
+  }
+
   navigateTo(`/connections/${props.connection}/models/${model.name}`)
 }
 
@@ -53,22 +60,38 @@ function directionFor(column: SortableColumn) {
   return sortColumn.value === column ? sortDirection.value : undefined
 }
 
-const sortedModels = computed(() => {
-  if (!sortColumn.value) {
-    return props.models
-  }
-
-  const column = sortColumn.value
-  const sorted = [...props.models].sort((a, b) => {
+function compareByColumn(column: SortableColumn) {
+  return (a: ModelSummary, b: ModelSummary) => {
     const av = a[column]
     const bv = b[column]
 
     return typeof av === 'number' && typeof bv === 'number'
       ? av - bv
       : String(av).localeCompare(String(bv), undefined, { sensitivity: 'base' })
-  })
+  }
+}
 
-  return sortDirection.value === 'desc' ? sorted.reverse() : sorted
+const sortedModels = computed(() => {
+  if (!sortColumn.value) {
+    return props.models
+  }
+
+  const column = sortColumn.value
+  const direction = sortDirection.value
+
+  // limite : une table absente n'a pas de nom comparable, elle reste en fin
+  // de liste quel que soit le sens de tri (asc/desc) plutôt que de sauter
+  // en tête au tri descendant.
+  if (column === 'table') {
+    const withTable = props.models.filter((model) => model.table_exists).sort(compareByColumn(column))
+    const withoutTable = props.models.filter((model) => !model.table_exists)
+
+    return [...(direction === 'desc' ? withTable.reverse() : withTable), ...withoutTable]
+  }
+
+  const sorted = [...props.models].sort(compareByColumn(column))
+
+  return direction === 'desc' ? sorted.reverse() : sorted
 })
 </script>
 
@@ -89,16 +112,18 @@ const sortedModels = computed(() => {
       </tr>
     </thead>
     <tbody>
-      <!-- EX-303 : navigue vers le listing des items du modèle (module 4) -->
+      <!-- EX-303 : navigue vers le listing des items du modèle (module 4),
+           sauf si sa table est absente (limite EX-303/EX-305) -->
       <tr
         v-for="model in sortedModels"
         :key="model.name"
-        tabindex="0"
+        :class="{ 'model-list__row--disabled': !model.table_exists }"
+        :tabindex="model.table_exists ? 0 : -1"
         @click="goToModel(model)"
         @keydown.enter="goToModel(model)"
       >
         <td>{{ model.name }}</td>
-        <td>{{ model.table }}</td>
+        <td>{{ model.table_exists ? model.table : $t('models.tableMissing') }}</td>
         <td class="model-list__count model-list__count-column">{{ model.item_count }}</td>
         <td class="model-list__count model-list__count-column">{{ model.column_count }}</td>
       </tr>
@@ -107,6 +132,17 @@ const sortedModels = computed(() => {
 </template>
 
 <style scoped>
+.model-list__row--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* cohérent avec ConnectionList.vue : une ligne non navigable n'a pas
+   d'affordance de survol */
+.model-list__row--disabled:hover {
+  outline: none;
+}
+
 .model-list__count {
   text-align: right;
 }

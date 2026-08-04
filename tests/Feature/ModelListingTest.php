@@ -117,9 +117,29 @@ class ModelListingTest extends TestCase
         $response->assertJsonFragment([
             'name' => 'Doohickey',
             'table' => 'widgets',
+            'table_exists' => true,
             'item_count' => '2',
             'item_count_raw' => 2,
             'column_count' => 4,
+        ]);
+    }
+
+    public function test_a_model_whose_table_does_not_exist_reports_table_exists_false(): void
+    {
+        $this->putModel('Ghost', 'ghosts');
+
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('primary'));
+
+        $response->assertOk();
+        $response->assertJsonFragment([
+            'name' => 'Ghost',
+            'table' => 'ghosts',
+            'table_exists' => false,
+            'item_count' => '0',
+            'item_count_raw' => 0,
+            'column_count' => 0,
         ]);
     }
 

@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\DB;
  * Eloquent déclarées pointant vers la même table donnent deux entrées
  * distinctes : le listing est construit par classe, jamais dédupliqué par
  * table.
+ *
+ * `table_exists` signale au front qu'un modèle référence une table absente
+ * de la base, pour qu'il l'affiche comme non navigable plutôt que comme une
+ * table vide (limite EX-303/EX-305 du module 3).
  */
 class ModelRepository
 {
@@ -31,7 +35,7 @@ class ModelRepository
     }
 
     /**
-     * @return array<int, array{name: string, table: string, item_count: string, item_count_raw: int, column_count: int}>
+     * @return array<int, array{name: string, table: string, table_exists: bool, item_count: string, item_count_raw: int, column_count: int}>
      */
     public function forConnection(string $connection, ?string $search = null): array
     {
@@ -67,7 +71,7 @@ class ModelRepository
     /**
      * @param  class-string<\Illuminate\Database\Eloquent\Model>  $class
      * @param  array<string, true>  $existingTables
-     * @return array{name: string, table: string, item_count: string, item_count_raw: int, column_count: int}
+     * @return array{name: string, table: string, table_exists: bool, item_count: string, item_count_raw: int, column_count: int}
      */
     private function describe(string $class, array $existingTables): array
     {
@@ -78,11 +82,15 @@ class ModelRepository
         // Un modèle Eloquent déclaré peut ne correspondre à aucune table
         // réelle (ex. table pas encore migrée en prod) : on l'affiche quand
         // même (EX-301/EX-305 lisent le code, pas la base) avec des
-        // compteurs à 0 plutôt que de planter le listing entier.
+        // compteurs à 0 plutôt que de planter le listing entier. `table`
+        // garde le nom réel déclaré par le modèle pour que le filtre EX-304
+        // continue de fonctionner ; `table_exists` permet au front de
+        // signaler l'absence plutôt que d'afficher un nom de table trompeur.
         if (! isset($existingTables[strtolower($table)])) {
             return [
                 'name' => class_basename($class),
                 'table' => $table,
+                'table_exists' => false,
                 'item_count' => ApproximateCount::format(0),
                 'item_count_raw' => 0,
                 'column_count' => 0,
@@ -94,6 +102,7 @@ class ModelRepository
         return [
             'name' => class_basename($class),
             'table' => $table,
+            'table_exists' => true,
             // Valeur numérique brute, en plus du formatage EX-312, pour un tri
             // (EX-313/EX-316) cohérent avec la valeur affichée : `item_count`
             // (ex. "1.2K") ne s'ordonne pas correctement lexicographiquement.

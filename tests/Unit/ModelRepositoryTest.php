@@ -122,9 +122,19 @@ class ModelRepositoryTest extends TestCase
         $models = collect($repository->forConnection('primary'))->keyBy('name');
 
         $this->assertSame('ghosts', $models['Ghost']['table']);
+        $this->assertFalse($models['Ghost']['table_exists']);
         $this->assertSame('0', $models['Ghost']['item_count']);
         $this->assertSame(0, $models['Ghost']['item_count_raw']);
         $this->assertSame(0, $models['Ghost']['column_count']);
+    }
+
+    public function test_a_model_whose_table_exists_reports_table_exists_true(): void
+    {
+        $repository = app(ModelRepository::class);
+
+        $models = collect($repository->forConnection('primary'))->keyBy('name');
+
+        $this->assertTrue($models['Sprocket']['table_exists']);
     }
 
     public function test_it_uses_the_engine_estimate_when_it_is_above_the_exact_count_threshold(): void

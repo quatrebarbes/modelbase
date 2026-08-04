@@ -25,7 +25,8 @@
     "columnTable": "Table",
     "columnItems": "Items",
     "columnColumns": "Columns",
-    "searchPlaceholder": "Filter by name or table"
+    "searchPlaceholder": "Filter by name or table",
+    "tableMissing": "NULL"
   },
   "items": {
     "title": "Items — {model}",
