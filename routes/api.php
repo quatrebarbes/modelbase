@@ -24,6 +24,14 @@ Route::prefix(config('modelbase.route_prefix').'/api')
         Route::get('/connections', [ConnectionController::class, 'index'])
             ->name('connections.index');
 
+        // EX-210 : statut et comptage de modèles résolus à part, connexion
+        // par connexion (EX-209 : le listing ci-dessus n'attend plus cette
+        // résolution). Volontairement hors du groupe EnsureConnectionIsNavigable
+        // ci-dessous : cet endpoint sert justement à déterminer si la
+        // connexion est navigable, l'y soumettre serait circulaire.
+        Route::get('/connections/{connection}/status', [ConnectionController::class, 'status'])
+            ->name('connections.status');
+
         // EX-206 : la navigation vers une connexion (et tout ce qu'elle
         // contient — modules 3-4) est bloquée si celle-ci n'est pas
         // disponible (cf. EnsureConnectionIsNavigable, déjà testé en

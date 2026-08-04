@@ -2,7 +2,7 @@
 type Connection = {
   name: string
   driver: string | null
-  status: 'available' | 'unavailable'
+  status: 'checking' | 'available' | 'unavailable'
   model_count: number | null
 }
 
@@ -32,15 +32,26 @@ function goToConnection(connection: Connection) {
       <tr
         v-for="connection in connections"
         :key="connection.name"
-        :class="{ 'connection-list__row--unavailable': connection.status !== 'available' }"
+        :class="{ 'connection-list__row--unavailable': connection.status === 'unavailable' }"
         :tabindex="connection.status === 'available' ? 0 : undefined"
         @click="goToConnection(connection)"
         @keydown.enter="goToConnection(connection)"
       >
         <td>{{ connection.name }}</td>
         <td>{{ connection.driver }}</td>
-        <td>{{ connection.status === 'available' ? $t('connections.statusAvailable') : $t('connections.statusUnavailable') }}</td>
-        <td>{{ connection.status === 'available' ? connection.model_count : '—' }}</td>
+        <!-- EX-212 : indicateur de chargement dédié, à la place du statut ET
+             du nombre de modèles, tant que la réponse individuelle n'est pas
+             arrivée -->
+        <template v-if="connection.status === 'checking'">
+            <td v-if="connection.status === 'checking'" class="connection-list__checking">
+              <Spinner /> {{ $t('connections.statusChecking') }}
+            </td>
+			<td />
+		</template>
+        <template v-else>
+          <td>{{ connection.status === 'available' ? $t('connections.statusAvailable') : $t('connections.statusUnavailable') }}</td>
+          <td>{{ connection.status === 'available' ? connection.model_count : '—' }}</td>
+        </template>
       </tr>
     </tbody>
   </table>
@@ -56,5 +67,12 @@ function goToConnection(connection: Connection) {
    indisponible n'est pas une action interactive */
 .connection-list__row--unavailable:hover {
   outline: none;
+}
+
+.connection-list__checking {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-text-muted);
 }
 </style>

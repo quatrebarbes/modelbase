@@ -15,7 +15,8 @@
     "columnStatus": "Statut",
     "columnModels": "Modèles",
     "statusAvailable": "disponible",
-    "statusUnavailable": "indisponible"
+    "statusUnavailable": "indisponible",
+    "statusChecking": "Vérification…"
   },
   "models": {
     "title": "Modèles — {connection}",

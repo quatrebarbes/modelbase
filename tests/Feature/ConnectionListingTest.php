@@ -2,6 +2,8 @@
 
 namespace Quatrebarbes\Modelbase\Tests\Feature;
 
+use Quatrebarbes\Modelbase\Support\ConnectionAvailability;
+use Quatrebarbes\Modelbase\Support\EloquentModelFinder;
 use Quatrebarbes\Modelbase\Tests\TestCase;
 use Orchestra\Testbench\Factories\UserFactory;
 
@@ -47,25 +49,15 @@ class ConnectionListingTest extends TestCase
         return route('modelbase.api.connections.index');
     }
 
-    public function test_it_lists_available_and_unavailable_connections(): void
+    public function test_it_lists_connection_names_and_drivers(): void
     {
         $user = UserFactory::new()->create();
 
         $response = $this->actingAs($user)->getJson($this->endpoint());
 
         $response->assertOk();
-        $response->assertJsonFragment([
-            'name' => 'reachable',
-            'driver' => 'sqlite',
-            'status' => 'available',
-            'model_count' => 0,
-        ]);
-        $response->assertJsonFragment([
-            'name' => 'unreachable',
-            'driver' => 'mysql',
-            'status' => 'unavailable',
-            'model_count' => null,
-        ]);
+        $response->assertJsonFragment(['name' => 'reachable', 'driver' => 'sqlite']);
+        $response->assertJsonFragment(['name' => 'unreachable', 'driver' => 'mysql']);
     }
 
     public function test_it_excludes_connections_listed_in_modelbase_config(): void
@@ -87,41 +79,21 @@ class ConnectionListingTest extends TestCase
         $response->assertOk();
 
         foreach ($response->json('data') as $connection) {
-            $this->assertSame(
-                ['name', 'driver', 'status', 'model_count'],
-                array_keys($connection)
-            );
+            $this->assertSame(['name', 'driver'], array_keys($connection));
         }
     }
 
-    public function test_status_is_recalculated_on_every_call_without_caching(): void
+    public function test_it_lists_connections_without_resolving_status_or_model_count(): void
     {
+        // EX-209 : le listing brut ne doit plus jamais résoudre le statut ni
+        // le comptage de modèles — si `index()` en dépendait encore, ces
+        // deux mocks échoueraient le test dès leur premier appel, plutôt que
+        // de dépendre d'un délai de connexion réel pour le détecter.
+        $this->mock(ConnectionAvailability::class)->shouldNotReceive('isAvailable');
+        $this->mock(EloquentModelFinder::class)->shouldNotReceive('forConnection');
+
         $user = UserFactory::new()->create();
 
-        config(['database.connections.flaky' => [
-            'driver' => 'sqlite',
-            'database' => ':memory:',
-        ]]);
-
-        $this->actingAs($user)->getJson($this->endpoint())
-            ->assertOk()
-            ->assertJsonFragment(['name' => 'flaky', 'status' => 'available']);
-
-        // Simule une connexion devenue injoignable entre deux affichages : si
-        // le statut était mis en cache (PDO déjà résolu lors du premier
-        // appel), ce second appel afficherait encore "available" malgré cette
-        // nouvelle configuration erronée (EX-208).
-        config(['database.connections.flaky' => [
-            'driver' => 'mysql',
-            'host' => '127.0.0.1',
-            'port' => 1,
-            'database' => 'nope',
-            'username' => 'nope',
-            'password' => 'nope',
-        ]]);
-
-        $this->actingAs($user)->getJson($this->endpoint())
-            ->assertOk()
-            ->assertJsonFragment(['name' => 'flaky', 'status' => 'unavailable', 'model_count' => null]);
+        $this->actingAs($user)->getJson($this->endpoint())->assertOk();
     }
 }

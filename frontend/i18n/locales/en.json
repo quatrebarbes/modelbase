@@ -15,7 +15,8 @@
     "columnStatus": "Status",
     "columnModels": "Models",
     "statusAvailable": "available",
-    "statusUnavailable": "unavailable"
+    "statusUnavailable": "unavailable",
+    "statusChecking": "Checking…"
   },
   "models": {
     "title": "Models — {connection}",
