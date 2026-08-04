@@ -37,11 +37,17 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   submitLabel?: string
   cancellable?: boolean
+  // EX-465/EX-468 : bascule le formulaire en mode modification différentielle
+  // (payload limité aux colonnes changées, validation désactivée tant
+  // qu'aucune colonne n'est modifiée) — la création (EX-412, `<limite>`)
+  // continue de transmettre toutes les colonnes renseignées.
+  editing?: boolean
 }>(), {
   initialValues: () => ({}),
   errors: () => ({}),
   disabled: false,
   cancellable: false,
+  editing: false,
 })
 
 const { t } = useI18n()
@@ -54,6 +60,22 @@ const emit = defineEmits<{
 
 const values = reactive<Record<string, unknown>>({ ...props.initialValues })
 
+// L'API renvoie une colonne JSON sous forme de texte encodé, pas de valeur
+// déjà structurée (ItemRepository::decorate() ne json_decode() pas la valeur
+// lue en base) — reparsée ici pour disposer d'une valeur structurée aussi
+// bien pour l'affichage initial de l'éditeur (EX-414) que pour la
+// comparaison EX-467, plutôt que de comparer un objet (une fois retouché par
+// l'utilisateur, cf. updateJsonDraft()) à la chaîne brute initiale.
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
 // EX-414 : l'éditeur JSON manipule une représentation texte à part, JSON.parse
 // n'étant tenté qu'à la saisie — un textarea ne peut pas être lié directement
 // à une valeur qui n'est pas une chaîne.
@@ -62,7 +84,8 @@ const jsonErrors = reactive<Record<string, boolean>>({})
 
 for (const column of props.columns) {
   if (column.type === 'json') {
-    jsonDrafts[column.column] = JSON.stringify(props.initialValues?.[column.column] ?? null, null, 2)
+    values[column.column] = parseJsonValue(props.initialValues?.[column.column])
+    jsonDrafts[column.column] = JSON.stringify(values[column.column] ?? null, null, 2)
   }
 }
 
@@ -77,10 +100,63 @@ function updateJsonDraft(column: string, text: string): void {
   }
 }
 
+// EX-467 : comparaison structurée (récursive, indépendante de l'ordre des
+// clés) plutôt que textuelle — un simple reformatage de l'éditeur JSON ne
+// doit pas être vu comme un changement.
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+
+  const aIsArray = Array.isArray(a)
+  const bIsArray = Array.isArray(b)
+  if (aIsArray !== bIsArray) return false
+
+  if (aIsArray && bIsArray) {
+    return a.length === b.length && a.every((item, index) => deepEqual(item, b[index]))
+  }
+
+  const aKeys = Object.keys(a as Record<string, unknown>)
+  const bKeys = Object.keys(b as Record<string, unknown>)
+  return aKeys.length === bKeys.length
+    && aKeys.every((key) => deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+}
+
+// Comparaison par valeur (EX-465, `<limite>` sur le rétablissement manuel
+// d'une valeur à son état initial) — tolère les changements de
+// représentation qui ne changent pas la valeur effective (ex. un champ
+// numérique retapé à l'identique arrive en chaîne, l'initiale en nombre).
+function valuesEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (a === null || a === undefined || b === null || b === undefined) return false
+  if (typeof a === 'object' || typeof b === 'object') return deepEqual(a, b)
+
+  return String(a) === String(b)
+}
+
+function hasChanged(column: ColumnSchema): boolean {
+  const initial = column.type === 'json'
+    ? parseJsonValue(props.initialValues?.[column.column])
+    : props.initialValues?.[column.column]
+
+  return !valuesEqual(values[column.column], initial)
+}
+
+// EX-465 : colonnes effectivement modifiées par rapport aux valeurs
+// initialement chargées, seules celles-ci sont transmises en mode
+// modification (`editing`). EX-468 : tant qu'elle est vide, la validation du
+// formulaire de modification n'est pas proposée à l'utilisateur.
+const changedColumns = computed(() => props.columns.filter(hasChanged))
+const hasChanges = computed(() => changedColumns.value.length > 0)
+
 function handleSubmit(): void {
   if (Object.values(jsonErrors).some(Boolean)) return
 
-  emit('submit', { ...values })
+  if (!props.editing) {
+    emit('submit', { ...values })
+    return
+  }
+
+  emit('submit', Object.fromEntries(changedColumns.value.map((column) => [column.column, values[column.column]])))
 }
 
 // EX-451 (exception) : les colonnes à rendu volumineux (JSON, texte long —
@@ -191,7 +267,7 @@ const orderedColumns = computed(() => [
     <p v-for="message in (errors._general ?? [])" :key="message" class="item-form__error item-form__error--general">{{ message }}</p>
 
     <div class="item-form__actions">
-      <button type="submit" class="btn btn--primary" :disabled="disabled">
+      <button type="submit" class="btn btn--primary" :disabled="disabled || (editing && !hasChanges)">
         {{ resolvedSubmitLabel }}
       </button>
       <button

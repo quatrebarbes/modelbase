@@ -210,6 +210,7 @@ async function handleReindex() {
       :initial-values="initialValues"
       :errors="errors"
       :disabled="submitting"
+      editing
       cancellable
       @submit="handleSubmit"
       @cancel="editing = false"

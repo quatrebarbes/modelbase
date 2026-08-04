@@ -329,6 +329,35 @@ class ItemMutationTest extends TestCase
         $this->assertTrue($values['internal_note']['is_null']);
     }
 
+    /**
+     * EX-465/EX-466 (Phase 21) : le front ne transmet désormais que les
+     * colonnes effectivement modifiées ; ce cas exerce explicitement ce
+     * payload partiel (une seule colonne parmi plusieurs, y compris une
+     * colonne `unique` absente du payload) — déjà géré tel quel par
+     * `ItemRepository::update()` (`fill()` ne touche que les clés fournies),
+     * mais jamais exercé par un test avec un payload réellement partiel
+     * jusqu'ici (les tests précédents ne fournissaient qu'une colonne parce
+     * que le modèle de test n'en a qu'une à faire varier, pas pour vérifier
+     * l'absence d'effet de bord sur les autres).
+     */
+    public function test_it_updates_a_single_column_from_a_partial_payload_without_affecting_the_others(): void
+    {
+        $id = $this->createProduct(['sku' => 'SKU-PARTIAL', 'price' => 9.99]);
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->patchJson($this->updateUrl('MutationProduct', (string) $id), [
+            'price' => 12.5,
+        ]);
+
+        $response->assertOk();
+        $values = collect($response->json('data.values'))->keyBy('column');
+
+        $this->assertEquals(12.5, $values['price']['value']);
+        $this->assertSame('Hammer', $values['name']['value']);
+        $this->assertSame('SKU-PARTIAL', $values['sku']['value']);
+        $this->assertSame(1, $values['category_id']['value']);
+    }
+
     public function test_it_returns_404_when_updating_an_unknown_item(): void
     {
         $user = UserFactory::new()->create();
