@@ -34,6 +34,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 
 const api = useApiClient()
 const { t } = useI18n()
+const router = useRouter()
 const canvas = ref<HTMLElement | null>(null)
 const renderError = ref(false)
 let cy: import('cytoscape').Core | null = null
@@ -46,7 +47,9 @@ const { data } = await useAsyncData(
 const relations = computed<Relation[]>(() => data.value?.data ?? [])
 
 function buildElements(items: Relation[]) {
-  const nodes = [{ data: { id: props.model, label: props.model, center: true, unavailable: false } }]
+  const nodes: Array<{ data: Record<string, unknown> }> = [
+    { data: { id: props.model, label: props.model, center: true, unavailable: false, clickable: false } },
+  ]
   const declared = new Set([props.model])
   const edges: Array<{ data: Record<string, unknown> }> = []
 
@@ -54,6 +57,9 @@ function buildElements(items: Relation[]) {
     if (!declared.has(relation.related_model)) {
       // Limite SFD : un modèle cible non navigable reste affiché (jamais
       // omis), avec une indication d'indisponibilité plutôt qu'un lien.
+      // EX-311 : seul un modèle lié navigable est cliquable, vers le
+      // listing de ses items (related_connection/related_model portés par
+      // le nœud pour la navigation au clic, cf. handler `tap` ci-dessous).
       nodes.push({
         data: {
           id: relation.related_model,
@@ -62,6 +68,8 @@ function buildElements(items: Relation[]) {
             : `${relation.related_model} (${t('relations.unavailableModel')})`,
           center: false,
           unavailable: !relation.navigable,
+          clickable: relation.navigable,
+          connection: relation.related_connection,
         },
       })
       declared.add(relation.related_model)
@@ -97,6 +105,7 @@ async function render() {
   const colorBorder = style.getPropertyValue('--color-border').trim()
   const colorText = style.getPropertyValue('--color-text').trim()
   const colorPrimary = style.getPropertyValue('--color-primary').trim()
+  const colorHover = style.getPropertyValue('--color-hover').trim()
 
   try {
     cy = cytoscape({
@@ -140,6 +149,18 @@ async function render() {
           style: {
             'border-style': 'dashed',
             'text-opacity': 0.7,
+          },
+        },
+        {
+          // EX-112 : bordure --color-hover au survol d'un modèle lié
+          // cliquable, cohérent avec le reste du front (boutons, liens,
+          // lignes de tableau) — classe posée/retirée manuellement par les
+          // handlers `mouseover`/`mouseout` ci-dessous, Cytoscape.js n'ayant
+          // pas de sélecteur `:hover` natif.
+          selector: 'node.hover',
+          style: {
+            'border-color': colorHover,
+            'border-width': 2,
           },
         },
         {
@@ -194,6 +215,24 @@ async function render() {
     })
 
     cy.fit(undefined, 40)
+
+    // EX-311 : un clic sur un modèle lié navigable ouvre le listing de ses
+    // items ; le modèle courant (centre) et un modèle non navigable
+    // (limite SFD EX-306 à EX-310) restent sans effet au clic.
+    cy.on('mouseover', 'node[?clickable]', (event) => {
+      if (canvas.value) canvas.value.style.cursor = 'pointer'
+      event.target.addClass('hover')
+    })
+    cy.on('mouseout', 'node[?clickable]', (event) => {
+      if (canvas.value) canvas.value.style.cursor = ''
+      event.target.removeClass('hover')
+    })
+    cy.on('tap', 'node[?clickable]', (event) => {
+      const targetConnection = event.target.data('connection')
+      const targetModel = event.target.data('id')
+      emit('close')
+      router.push(`/connections/${targetConnection}/models/${targetModel}`)
+    })
   } catch {
     renderError.value = true
   }

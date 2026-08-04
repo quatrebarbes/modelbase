@@ -1,6 +1,6 @@
 # Roadmap
 
-Dernière mise à jour : 2026-08-04 (Phase 15 — pagination avancée du listing des items, EX-452 à EX-456, close).
+Dernière mise à jour : 2026-08-04 (Phase 9ter — navigation depuis le diagramme de relations, EX-311, close).
 
 Historique : revue CTO du 2026-07-27, recensement des exigences SFD non développées ou non reflétées dans la roadmap — disposition en colonnes de la fiche détail/formulaire (alors EX-454 à EX-457, renumérotées EX-448 à EX-451 le 2026-08-03 après retrait d'EX-448 à EX-453), disposition en étoile du diagramme de relations EX-310 jamais réellement traduite techniquement malgré la Phase 9 close ; EX-452 à EX-456 (alors EX-458 à EX-462) déjà identifiées précédemment, toujours non développées.
 
@@ -8,10 +8,12 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
 1. Architecture générale (EX-101 à EX-119)
 2. Bases de données (EX-201 à EX-208)
-3. Modèles (EX-301 à EX-310)
+3. Modèles (EX-301 à EX-311)
 4. Items (EX-401 à EX-456, EX-463 à EX-464)
 
 Les exigences EX-101 à EX-436 sont toutes développées (Phases 0 à 11 ci-dessous, closes).
+
+L'exigence EX-311 (module 3 — navigation depuis un modèle lié du diagramme de relations vers le listing de ses items) a été ajoutée à la SFD à la demande de l'utilisateur le 2026-08-04, hors revue CTO du 2026-07-27. Développée dans la foulée (Phase 9ter ci-dessous, close).
 
 Les exigences EX-437 à EX-447 (module 4 — gestion des items soft-deleted, mise à jour à la demande du cache Scout) ont été ajoutées aux SFD après la clôture de la Phase 10. Elles sont désormais toutes développées (Phases 12-13 ci-dessous, closes).
 
@@ -53,6 +55,7 @@ Les exigences EX-452 à EX-456 (module 4 — choix du nombre de lignes par page 
 | 9bis  | Revoir diagramme de relations  | ✅ fait    |
 | 14    | Disposition item en colonnes   | ✅ fait    |
 | 15    | Pagination avancée du listing  | ✅ fait    |
+| 9ter  | Navigation depuis diagramme    | ✅ fait    |
 
 ---
 
@@ -372,6 +375,23 @@ Points d'attention :
 - **Effet de bord du contournement de build ci-dessus, à surveiller** : lancer `nuxt generate` directement dans le conteneur `frontend` (au lieu d'une copie jetable, cf. commentaire de tête de `build-front-package.sh`) a bien écrasé le cache `.nuxt`/`.output` partagé avec le serveur de dev — erreur Vite `#app-manifest` observée juste après, comme le script le documentait déjà en théorie. Résolu par un simple `docker compose restart frontend` (revérifié : plusieurs requêtes SSR consécutives à 200 après redémarrage). Si `build-front-package.sh` doit un jour refonctionner tel quel sur ce poste, le problème est la résolution de `$(dirname "$0")` par Git Bash sur ce chemin réseau `\\wsl.localhost\...`, pas le script lui-même.
 - **Rendu non vérifié visuellement dans un navigateur réel** (même limite déjà documentée Phases 6/7/8/9/11/12 : pas de `chromium-cli` dans cet environnement) — vérifié uniquement via (1) `RelationRepository::forModel()` en tinker contre mysql réel (types/multiplicités/modèles liés corrects pour `Category` et `Product`), (2) build `nuxt generate` sans erreur, (3) SSR de la page listing (qui monte `RelationDiagram` uniquement au clic, non exercé par le SSR) sans erreur serveur. Le layout `concentric` de Cytoscape.js lui-même (positionnement effectif à l'écran) n'a donc pas été observé visuellement — à faire à la prochaine occasion d'utiliser un vrai navigateur.
 - **Nom de fichier de migration `product_tag`** : suit la convention par défaut de `belongsToMany` de Laravel (deux noms de modèles au singulier, ordre alphabétique) plutôt qu'un nom explicite, pour rester la table pivot implicite que `Product::tags()`/`Tag::products()` résolvent sans configuration supplémentaire.
+
+## Phase 9ter — Navigation depuis le diagramme de relations (module 3, EX-311)
+
+Demande directe de l'utilisateur le 2026-08-04 : rendre le diagramme cliquable pour naviguer vers le listing des items d'un modèle lié, plutôt qu'un simple support visuel. Exigence absente de la SFD jusqu'ici, ajoutée à cette occasion (EX-311, avec ses deux limites).
+
+- [x] Clic sur un modèle lié navigable → navigation vers `/connections/{related_connection}/models/{related_model}` (EX-311) — `frontend/components/RelationDiagram.vue` : chaque nœud lié porte désormais `clickable`/`connection` en plus de `unavailable` ; handler `cy.on('tap', 'node[?clickable]', ...)` ferme le panneau (`emit('close')`) puis `router.push()` vers le listing du modèle ciblé.
+- [x] Un modèle lié non navigable ne réagit pas au clic (limite EX-311) — `clickable` vaut `relation.navigable`, le sélecteur Cytoscape `node[?clickable]` n'inclut donc jamais un nœud non navigable.
+- [x] Le modèle courant (centre) n'est pas cliquable (limite EX-311) — `clickable: false` figé sur ce nœud, jamais dérivé d'une relation.
+- [x] Curseur `pointer` au survol d'un modèle lié cliquable (`mouseover`/`mouseout` sur `node[?clickable]`, pas de propriété `cursor` native à Cytoscape.js) — signal visuel de cliquabilité, cohérent avec le reste du front (liens `NuxtLink`, boutons).
+- [x] Bordure `--color-hover` (#fc9b50) au survol d'un modèle lié cliquable, demandé explicitement par l'utilisateur — déjà couvert par EX-112 (« une action interactive adopte #fc9b50 au survol »), jamais appliqué à ce composant jusqu'ici, donc pas de nouvelle exigence SFD nécessaire. Cytoscape.js n'ayant pas de sélecteur `:hover` natif, la classe `hover` est posée/retirée manuellement (`addClass`/`removeClass`) par les mêmes handlers `mouseover`/`mouseout` que le curseur, un style `node.hover` appliquant `border-color`/`border-width: 2`.
+- Pas de nouveau test automatisé : aucun composant frontend de ce projet n'est couvert par des tests unitaires/composants (cf. absence de tests existants pour `RelationDiagram.vue`/`ItemList.vue`), conformément à la convention du projet qui réserve Feature/Unit aux endpoints et fonctions backend.
+
+**Bug corrigé, signalé par l'utilisateur (« ça ne marche pas : aucune navigation au clic »)** : le clic déclenchait bien `router.push()`, mais `frontend/pages/connections/[connection]/models/[model]/index.vue` lit `route.params.connection`/`route.params.model` dans de simples `const` au montage, jamais réévaluées ensuite. Or naviguer d'un modèle lié vers un autre reste sur cette même route Vue Router (mêmes composants, seuls les paramètres dynamiques changent) : Nuxt réutilise donc l'instance de page existante plutôt que de la remonter, et l'URL changeait sans que le contenu affiché ne suive — cas resté invisible jusqu'ici car aucun autre lien de l'appli ne naviguait entre deux instances de cette même route (le seul chemin d'entrée précédent, `ModelList.vue`, mène à cette page depuis une route différente, un vrai remontage). Corrigé via `definePageMeta({ key: (route) => \`${route.params.connection}/${route.params.model}\` })`, qui force un remontage complet (donc une relecture des params et un nouveau fetch) uniquement quand la connexion ou le modèle change — une clé basée sur `route.fullPath` (première tentative) aurait aussi remonté la page à chaque changement de filtre/tri/page (EX-432 à EX-436, query string uniquement), d'où l'exclusion délibérée de la query de la clé.
+
+Points d'attention :
+- **Rendu non vérifié visuellement dans un navigateur réel**, même limite que la Phase 9bis (pas de `chromium-cli` dans cet environnement) — le handler `tap`, le style `cursor` et le remontage de page via `definePageMeta({ key })` n'ont donc été vérifiés que par relecture du code et du bundle généré (présence des chaînes attendues), jamais observés à l'écran ; à confirmer par l'utilisateur en conditions réelles.
+- Build front (`resources/dist/modelbase/`) republié via le contournement documenté en Phase 9bis (`docker exec` dans le conteneur `frontend` déjà démarré, `build-front-package.sh` échouant toujours sur ce poste Windows/WSL), suivi d'un `docker compose restart frontend`.
 
 ## Phase 14 — Disposition en colonnes de la fiche détail et du formulaire (module 4, EX-448 à EX-451, EX-463)
 

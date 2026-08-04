@@ -2,6 +2,16 @@
 // EX-401/EX-402/EX-403/EX-404 : listing paginé des items d'un modèle.
 // EX-432 à EX-436 : filtre/tri par colonne, état reflété dans l'URL (query
 // params) pour rester partageable/rechargeable.
+// EX-311 : navigation d'un modèle lié vers un autre depuis le diagramme de
+// relations, restant sur cette même route (seuls les paramètres changent) —
+// `key` force Nuxt à remonter entièrement la page (donc à relire les
+// nouveaux `route.params` ci-dessous et à refaire les requêtes) plutôt que
+// de réutiliser l'instance existante, qui garderait sinon l'ancien modèle.
+// Clé basée sur les seuls params (pas `route.fullPath`) : un changement de
+// filtre/tri/page (EX-432 à EX-436, query string uniquement) ne doit pas
+// remonter la page, seul un changement de connexion/modèle le doit.
+definePageMeta({ key: (route) => `${route.params.connection}/${route.params.model}` })
+
 const route = useRoute()
 const router = useRouter()
 const connection = route.params.connection as string
