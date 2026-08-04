@@ -166,8 +166,16 @@ async function render() {
         {
           selector: 'edge',
           style: {
-            width: 1.5,
+            width: 2,
+            // Même couleur que la bordure des nœuds (--color-border),
+            // atténuée par une opacité propre au trait (`line-opacity`,
+            // distincte de celle du texte des étiquettes ci-dessous) plutôt
+            // qu'une couleur pleine — --color-text, retenue un temps,
+            // produisait des liens identiques à la couleur des étiquettes
+            // qui se retrouvent dessus depuis que leur fond est transparent,
+            // les deux se confondant là où un lien passe sous son étiquette.
             'line-color': colorBorder,
+            'line-opacity': 0.4,
             // Pas de fléchage : EX-310 impose une position équivalente pour
             // un modèle lié quel que soit le sens réel de la relation
             // (source ou cible) — un lien directionnel suggérerait une
@@ -184,10 +192,11 @@ async function render() {
             label: 'data(label)',
             'font-size': 10,
             color: colorText,
-            'text-background-color': colorBg,
-            'text-background-opacity': 0.35,
-            'text-background-padding': '2px',
-            'text-background-shape': 'roundrectangle',
+            // Fond transparent (pas de pavé derrière le texte) : commun au
+            // nom/type de la relation et aux multiplicités ci-dessous,
+            // `text-background-opacity` s'appliquant aux trois étiquettes
+            // d'un même lien (principale, source, cible).
+            'text-background-opacity': 0,
             // Multiplicités en bout de lien (notation UML) plutôt que
             // mêlées au nom/type de la relation, pour rester lisibles même
             // sur un schéma dense (limite SFD : pas de plafond sur le

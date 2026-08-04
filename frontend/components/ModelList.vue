@@ -24,8 +24,8 @@ function goToModel(model: ModelSummary) {
       <tr>
         <th>{{ $t('models.columnName') }}</th>
         <th>{{ $t('models.columnTable') }}</th>
-        <th>{{ $t('models.columnItems') }}</th>
-        <th>{{ $t('models.columnColumns') }}</th>
+        <th class="model-list__count-column">{{ $t('models.columnItems') }}</th>
+        <th class="model-list__count-column">{{ $t('models.columnColumns') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -39,9 +39,19 @@ function goToModel(model: ModelSummary) {
       >
         <td>{{ model.name }}</td>
         <td>{{ model.table }}</td>
-        <td>{{ model.item_count }}</td>
-        <td>{{ model.column_count }}</td>
+        <td class="model-list__count model-list__count-column">{{ model.item_count }}</td>
+        <td class="model-list__count model-list__count-column">{{ model.column_count }}</td>
       </tr>
     </tbody>
   </table>
 </template>
+
+<style scoped>
+.model-list__count {
+  text-align: right;
+}
+
+.model-list__count-column {
+  width: 3rem;
+}
+</style>

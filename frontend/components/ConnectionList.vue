@@ -24,7 +24,7 @@ function goToConnection(connection: Connection) {
         <th>{{ $t('connections.columnName') }}</th>
         <th>{{ $t('connections.columnDriver') }}</th>
         <th>{{ $t('connections.columnStatus') }}</th>
-        <th>{{ $t('connections.columnModels') }}</th>
+        <th class="connection-list__count-column">{{ $t('connections.columnModels') }}</th>
       </tr>
     </thead>
     <tbody>
@@ -46,11 +46,11 @@ function goToConnection(connection: Connection) {
             <td v-if="connection.status === 'checking'" class="connection-list__checking">
               <Spinner /> {{ $t('connections.statusChecking') }}
             </td>
-			<td />
+			<td class="connection-list__count-column" />
 		</template>
         <template v-else>
           <td>{{ connection.status === 'available' ? $t('connections.statusAvailable') : $t('connections.statusUnavailable') }}</td>
-          <td>{{ connection.status === 'available' ? connection.model_count : '—' }}</td>
+          <td class="connection-list__count connection-list__count-column">{{ connection.status === 'available' ? connection.model_count : '—' }}</td>
         </template>
       </tr>
     </tbody>
@@ -74,5 +74,13 @@ function goToConnection(connection: Connection) {
   align-items: center;
   gap: 0.5rem;
   color: var(--color-text-muted);
+}
+
+.connection-list__count {
+  text-align: right;
+}
+
+.connection-list__count-column {
+  width: 3rem;
 }
 </style>

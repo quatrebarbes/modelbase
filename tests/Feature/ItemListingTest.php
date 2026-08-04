@@ -261,6 +261,62 @@ class ItemListingTest extends TestCase
     }
 
     /**
+     * Phase 18 : en l'absence de tri explicite, le listing standard est trié
+     * par `updated_at` décroissant (item le plus récemment modifié en
+     * premier) plutôt que dans un ordre non garanti.
+     */
+    public function test_it_sorts_the_default_listing_by_updated_at_descending_when_no_sort_is_requested(): void
+    {
+        $user = UserFactory::new()->create();
+
+        DB::connection('primary')->table('products')->where('name', 'Orphan')->update(['updated_at' => now()->subDay()]);
+        DB::connection('primary')->table('products')->where('name', 'Hammer')->update(['updated_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct'));
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.name', 'Hammer');
+        $response->assertJsonPath('data.1.name', 'Orphan');
+    }
+
+    /**
+     * Phase 18 : à défaut de colonne `updated_at` (table sans timestamps), le
+     * listing standard se replie sur la clé primaire décroissante.
+     */
+    public function test_it_falls_back_to_the_primary_key_descending_when_no_updated_at_column_exists(): void
+    {
+        $user = UserFactory::new()->create();
+
+        DB::connection('primary')->table('categories')->insert(['id' => 2, 'name' => 'Garden']);
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingCategory'));
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.name', 'Garden');
+        $response->assertJsonPath('data.1.name', 'Tools');
+    }
+
+    /**
+     * Phase 18 : un tri explicite fourni via `sort` reste prioritaire sur le
+     * tri par défaut.
+     */
+    public function test_an_explicit_sort_takes_precedence_over_the_default_sort(): void
+    {
+        $user = UserFactory::new()->create();
+
+        // Le tri par défaut (updated_at desc) placerait Orphan en premier ;
+        // un tri explicite par nom croissant doit malgré tout l'emporter.
+        DB::connection('primary')->table('products')->where('name', 'Hammer')->update(['updated_at' => now()->subDay()]);
+        DB::connection('primary')->table('products')->where('name', 'Orphan')->update(['updated_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', ['sort' => 'name']));
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.name', 'Hammer');
+        $response->assertJsonPath('data.1.name', 'Orphan');
+    }
+
+    /**
      * EX-432 : un nom de colonne de filtre inconnu ou non exposé est rejeté
      * explicitement en 422, jamais tenté tel quel dans une requête SQL (pas
      * de 500).

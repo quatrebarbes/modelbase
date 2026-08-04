@@ -101,6 +101,17 @@ class ItemRepository
             if ($sort !== null && $sort !== '') {
                 $this->queryFilter->applySort($query, $sort, $columnTypes);
             }
+        } else {
+            // Tri par défaut en l'absence de tri explicite demandé : les items
+            // les plus récemment modifiés en premier, à défaut de colonne
+            // `updated_at` les plus récemment créés (identifiants les plus
+            // hauts) en premier — plutôt que l'ordre naturel du moteur de BDD,
+            // qui n'est pas garanti et surprend souvent l'utilisateur.
+            $defaultSort = $this->defaultSortColumn($db, $table, $instance, $keyName);
+
+            if ($defaultSort !== null) {
+                $query->orderBy($defaultSort, 'desc');
+            }
         }
 
         // EX-454 : un numéro de page hors bornes (< 1 ou > au nombre de pages
@@ -537,6 +548,27 @@ class ItemRepository
         ) {
             $instance->timestamps = false;
         }
+    }
+
+    /**
+     * Tri par défaut du listing standard (colonne `updated_at` du modèle si
+     * elle existe réellement dans la table, sinon la clé primaire si elle y
+     * existe) — `null` si ni l'une ni l'autre n'existe, auquel cas aucun
+     * `ORDER BY` n'est ajouté (ordre naturel du moteur de BDD).
+     */
+    private function defaultSortColumn(Connection $db, string $table, Model $instance, string $keyName): ?string
+    {
+        $updatedAtColumn = $instance->getUpdatedAtColumn();
+
+        if ($updatedAtColumn !== null && $db->getSchemaBuilder()->hasColumn($table, $updatedAtColumn)) {
+            return $updatedAtColumn;
+        }
+
+        if ($db->getSchemaBuilder()->hasColumn($table, $keyName)) {
+            return $keyName;
+        }
+
+        return null;
     }
 
     /**
