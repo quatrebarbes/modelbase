@@ -61,6 +61,21 @@ class DatabaseErrorTranslatorTest extends TestCase
         $this->assertSame('unique', $result['rule']);
     }
 
+    /**
+     * Une clé primaire dupliquée porte le nom générique 'PRIMARY' (pas la
+     * convention Laravel `{table}_{colonne}_unique`) : aucune colonne n'en
+     * est extraite.
+     */
+    public function test_mysql_duplicate_primary_key_is_translated_as_unique_without_a_column(): void
+    {
+        $exception = $this->queryException(['23000', 1062, "Duplicate entry '7' for key 'products.PRIMARY'"]);
+
+        $result = $this->translator()->translate($exception, 'mysql', 'products');
+
+        $this->assertNull($result['column']);
+        $this->assertSame('unique', $result['rule']);
+    }
+
     public function test_mysql_incorrect_value_is_translated_as_format(): void
     {
         $exception = $this->queryException(['HY000', 1366, "Incorrect integer value: 'notanumber' for column 'price_cents' at row 1"]);

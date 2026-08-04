@@ -153,4 +153,44 @@ class EloquentModelFinderTest extends TestCase
         $this->assertContains($namespace.'Models\\First', $after);
         $this->assertContains($namespace.'Models\\Second', $after);
     }
+
+    public function test_class_for_table_finds_the_model_declared_for_a_table_on_the_given_connection(): void
+    {
+        $namespace = app()->getNamespace();
+        $this->putModel($namespace, 'ClassForTableWidget');
+
+        $class = (new EloquentModelFinder)->classForTable('primary', 'class_for_table_widgets');
+
+        $this->assertSame($namespace.'Models\\ClassForTableWidget', $class);
+    }
+
+    public function test_class_for_table_returns_null_for_a_table_with_no_declared_model(): void
+    {
+        $this->assertNull((new EloquentModelFinder)->classForTable('primary', 'does_not_exist'));
+    }
+
+    public function test_class_for_table_ignores_models_declared_on_a_different_connection(): void
+    {
+        $namespace = app()->getNamespace();
+        $this->putModel($namespace, 'ClassForTableOnMysql', "protected \$connection = 'mysql';");
+
+        $this->assertNull((new EloquentModelFinder)->classForTable('primary', 'class_for_table_on_mysqls'));
+    }
+
+    /**
+     * Plusieurs classes Eloquent distinctes pointant vers la même table (cf.
+     * ModelListingTest::test_multiple_models_on_the_same_table_are_listed_as_distinct_entries) :
+     * classForTable() n'a pas vocation à désambiguïser, seulement à en
+     * renvoyer une (la première rencontrée) plutôt que d'échouer.
+     */
+    public function test_class_for_table_returns_one_candidate_when_several_models_share_the_same_table(): void
+    {
+        $namespace = app()->getNamespace();
+        $this->putModel($namespace, 'SharedTableWidget');
+        $this->putModel($namespace, 'SharedTableWidgetAlias', "protected \$table = 'shared_table_widgets';");
+
+        $class = (new EloquentModelFinder)->classForTable('primary', 'shared_table_widgets');
+
+        $this->assertContains($class, [$namespace.'Models\\SharedTableWidget', $namespace.'Models\\SharedTableWidgetAlias']);
+    }
 }

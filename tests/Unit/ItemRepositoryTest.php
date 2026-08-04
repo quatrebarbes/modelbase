@@ -786,6 +786,34 @@ class ItemRepositoryTest extends TestCase
     }
 
     /**
+     * EX-438 : une valeur de `trashed` autre que 'with'/'only' (ex. une
+     * valeur invalide transmise par erreur) se replie sur le comportement par
+     * défaut (exclusion des soft-deleted), au même titre que `trashed=null`.
+     */
+    public function test_paginate_falls_back_to_the_default_behaviour_for_an_unrecognized_trashed_value(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoArchivableProduct', 1, 15, [], null, 'bogus');
+
+        $this->assertSame(['Active'], collect($page['data'])->pluck('name')->all());
+    }
+
+    /**
+     * `ItemController::index()` impose `max(1, $perPage)` avant d'appeler ce
+     * repository (cf. src/Http/Controllers/ItemController.php) : ce garde-fou
+     * n'existe qu'à ce seul niveau, jamais dans ItemRepository lui-même — un
+     * appel direct avec un `$perPage` à 0 (ou négatif) plante avec une
+     * DivisionByZeroError plutôt que d'être géré. Ce test documente cette
+     * dépendance implicite entre les deux classes, pour qu'un futur retrait
+     * du garde-fou côté contrôleur ne passe pas inaperçu.
+     */
+    public function test_paginate_throws_a_division_by_zero_error_when_called_directly_with_a_zero_per_page(): void
+    {
+        $this->expectException(\DivisionByZeroError::class);
+
+        $this->repository()->paginate('primary', 'RepoProduct', 1, 0);
+    }
+
+    /**
      * EX-443 : ni le filtre `trashed`, ni `meta.soft_deletes` n'ont d'effet
      * pour un modèle n'utilisant pas SoftDeletes.
      */

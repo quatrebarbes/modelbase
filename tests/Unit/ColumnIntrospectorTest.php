@@ -110,6 +110,38 @@ class ColumnIntrospectorTest extends TestCase
     }
 
     /**
+     * Une colonne participant à une clé étrangère composite déclarée au
+     * niveau du schéma (pas d'une relation Eloquent, cf.
+     * test_it_ignores_a_composite_relation_foreign_key ci-dessous) n'est pas
+     * traitée comme clé étrangère au sens de ce module (foreignKeyFor() ne
+     * matche que `count($foreignKey['columns']) === 1`).
+     */
+    public function test_it_ignores_a_composite_schema_foreign_key(): void
+    {
+        Schema::connection('primary')->create('warehouses', function (Blueprint $table) {
+            $table->string('region');
+            $table->string('code');
+            $table->primary(['region', 'code']);
+        });
+
+        Schema::connection('primary')->create('shipments', function (Blueprint $table) {
+            $table->id();
+            $table->string('warehouse_region');
+            $table->string('warehouse_code');
+            $table->foreign(['warehouse_region', 'warehouse_code'])
+                ->references(['region', 'code'])
+                ->on('warehouses');
+        });
+
+        $columns = collect((new ColumnIntrospector)->forTable('primary', 'shipments'))->keyBy('name');
+
+        $this->assertFalse($columns['warehouse_region']['is_foreign_key']);
+        $this->assertNull($columns['warehouse_region']['foreign_key']);
+        $this->assertFalse($columns['warehouse_code']['is_foreign_key']);
+        $this->assertNull($columns['warehouse_code']['foreign_key']);
+    }
+
+    /**
      * Régression : une relation `belongsTo` à clé composite (ex. déclarée via
      * un package type Compoships) fait que getForeignKeyName() renvoie un
      * array plutôt qu'un string — Eloquent n'impose aucun type sur ce

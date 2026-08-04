@@ -82,6 +82,18 @@ class FrontRoutingTest extends TestCase
             ->assertSee('vendor:publish', false);
     }
 
+    /**
+     * Confort (routes/web.php) : le préfixe nu, sans le segment "app",
+     * redirige vers le point d'entrée du SPA plutôt que de renvoyer une 404 —
+     * middleware "web" seul (pas Authenticate), donc sans authentification
+     * préalable requise pour cette seule redirection.
+     */
+    public function test_the_bare_prefix_redirects_to_the_spa_entry_point(): void
+    {
+        $this->get('/modelbase')
+            ->assertRedirect(self::APP_ROOT);
+    }
+
     public function test_front_and_api_routes_are_distinguished_by_a_dedicated_segment(): void
     {
         // EX-105 : segments "app" (front) et "api" distincts sous le même
