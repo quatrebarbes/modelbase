@@ -1,13 +1,13 @@
 # Roadmap
 
-Dernière mise à jour : 2026-08-04 (Phase 9ter — navigation depuis le diagramme de relations, EX-311, close).
+Dernière mise à jour : 2026-08-04 (planification de la Phase 17, EX-302 complétée + EX-312, performance du listing des modèles, à la demande de l'utilisateur suite au constat que ce listing est lent).
 
 Historique : revue CTO du 2026-07-27, recensement des exigences SFD non développées ou non reflétées dans la roadmap — disposition en colonnes de la fiche détail/formulaire (alors EX-454 à EX-457, renumérotées EX-448 à EX-451 le 2026-08-03 après retrait d'EX-448 à EX-453), disposition en étoile du diagramme de relations EX-310 jamais réellement traduite techniquement malgré la Phase 9 close ; EX-452 à EX-456 (alors EX-458 à EX-462) déjà identifiées précédemment, toujours non développées.
 
 Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 
 1. Architecture générale (EX-101 à EX-119)
-2. Bases de données (EX-201 à EX-208)
+2. Bases de données (EX-201 à EX-214)
 3. Modèles (EX-301 à EX-311)
 4. Items (EX-401 à EX-456, EX-463 à EX-464)
 
@@ -18,6 +18,10 @@ L'exigence EX-311 (module 3 — navigation depuis un modèle lié du diagramme d
 Les exigences EX-437 à EX-447 (module 4 — gestion des items soft-deleted, mise à jour à la demande du cache Scout) ont été ajoutées aux SFD après la clôture de la Phase 10. Elles sont désormais toutes développées (Phases 12-13 ci-dessous, closes).
 
 Les exigences EX-452 à EX-456 (module 4 — choix du nombre de lignes par page et accès direct à une page, applicables au listing standard des items et aux tableaux d'objets liés, cf. « Pagination du listing des items » ; numérotées EX-458 à EX-462 jusqu'à leur renumérotation le 2026-08-03) ont été ajoutées aux SFD. Elles ne sont pas encore développées. Le périmètre de la mémorisation du nombre de lignes par page a été tranché (EX-456, ex-EX-462, ajoutée le 2026-07-25) : une valeur distincte par contexte de listing (modèle ou relation), pas une valeur unique globale à l'utilisateur.
+
+Les exigences EX-209 à EX-214 (module 2 — chargement progressif du listing des connexions : affichage immédiat d'une liste brute nom/driver, statut et nombre de modèles interrogés en parallèle puis mis à jour ligne par ligne, plafond de 10 secondes par connexion) ont été ajoutées à la SFD le 2026-08-04, à la demande de l'utilisateur suite au constat que le listing complet est lent lorsqu'une connexion tombe en timeout. Elles ne sont pas encore développées. Cf. Phase 16 ci-dessous.
+
+L'exigence EX-312 (module 3 — valeur approchée du nombre d'items d'une grande table, complète EX-302) a été ajoutée à la SFD le 2026-08-04, à la demande de l'utilisateur suite au constat que le listing des modèles est lent (`ModelRepository::describe()` : jusqu'à 3 requêtes DB par modèle, sans cache ; `EloquentModelFinder::all()` : rescan filesystem + Reflection à chaque appel). Non développée. Cf. Phase 17 ci-dessous.
 
 **Revue CTO du 2026-07-27 — écarts SFD ↔ roadmap identifiés à cette occasion**, tous non couverts par une phase existante :
 
@@ -56,6 +60,8 @@ Les exigences EX-452 à EX-456 (module 4 — choix du nombre de lignes par page 
 | 14    | Disposition item en colonnes   | ✅ fait    |
 | 15    | Pagination avancée du listing  | ✅ fait    |
 | 9ter  | Navigation depuis diagramme    | ✅ fait    |
+| 16    | Chargement progressif listing  | 🔜 à faire |
+| 17    | Performance listing modèles    | 🔜 à faire |
 
 ---
 
@@ -428,3 +434,44 @@ Points d'attention :
 - **`ItemPicker.vue` (EX-415, sélecteur de clé étrangère) explicitement hors périmètre** : il pagine aussi (`per_page: 100` fixe) mais n'est ni le listing standard (EX-403) ni un tableau d'objets liés (EX-429), les deux seuls listings visés par EX-452/EX-456 — non modifié.
 - **Build front republié** (`resources/dist/modelbase/`) via le même contournement que les Phases 9bis/13/14 pour ce shell Windows/WSL (`docker/build-front-package.sh` échoue toujours sur ce poste, `docker run -v` ne résolvant pas un chemin UNC `\\wsl.localhost\...` en chemin Windows absolu) : `nuxt generate` lancé directement dans le conteneur `frontend` déjà démarré, copie manuelle de `.output/public` vers `resources/dist/modelbase/`, puis `docker compose restart frontend`.
 - **Retouche ergonomique demandée après une première revue** : le texte statique « Page X / Y (Z item(s)) » et le champ de saisie directe (EX-453) répétaient tous deux le numéro de page courant, côte à côte — fusionnés en un seul champ éditable (« Page [_] / Y (Z item(s)) »). Le champ n'avait par ailleurs aucun style propre (bordure/police par défaut du navigateur, tranchant avec le reste de l'interface) : aligné sur le style des autres champs de saisie de l'app (`item-list__filter-input`, bordure + `--radius-pill` + hover/focus). Boutons précédent/suivant : glyphes remplacés (`‹`/`›` plutôt que `<`/`>`) et `aria-label` ajoutés (`items.previousPage`/`items.nextPage`) — absents jusque-là, un lecteur d'écran n'avait aucun moyen de les distinguer d'un texte. Vérifié à nouveau en SSR sur les deux contextes (listing standard et tableau d'objets liés) après cette retouche.
+
+## Phase 16 — Chargement progressif du listing des connexions (module 2, EX-209 à EX-214)
+
+Exigences ajoutées à la SFD le 2026-08-04 (cf. en-tête), à la demande de l'utilisateur suite au constat que le listing des connexions est pénalisé dans son ensemble par une seule connexion qui tombe en timeout — `ConnectionRepository::all()` résout aujourd'hui statut et comptage de modèles connexion par connexion, de façon strictement séquentielle, dans la même requête HTTP que le listing lui-même. Non développée : plan ci-dessous, à affiner en implémentant.
+
+- [ ] Scinder l'endpoint `GET /connections` en deux : `ConnectionController::index`/`ConnectionRepository::all()` ne renvoient plus que `name`/`driver` par connexion (EX-209) — plus aucun appel à `ConnectionAvailability::isAvailable()` ni `EloquentModelFinder::forConnection()` dans cette méthode, qui redevient une simple lecture de `config('database.connections')` filtrée par `excluded_connections`, sans E/S. Nouvel endpoint `GET /connections/{connection}/status` (nouvelle méthode `ConnectionController::status`, nouvelle méthode `ConnectionRepository::status()` réutilisant telles quelles `ConnectionAvailability`/`EloquentModelFinder`) renvoyant `{status, model_count}` pour une seule connexion (EX-202 inchangée sur le fond, simplement scindée en deux endpoints) — 404 si connexion inconnue ou exclue (même liste `excluded_connections` qu'aujourd'hui) ; `EnsureConnectionIsNavigable` (EX-206) ne s'applique volontairement pas à ce nouvel endpoint, qui sert justement à déterminer si la connexion est navigable — l'y soumettre serait circulaire
+- [ ] Front (`frontend/pages/index.vue`, `ConnectionList.vue`) : chargement en deux temps — le fetch existant sur `/connections` affiche immédiatement le tableau nom/driver (EX-209), chaque ligne dans un nouvel état `checking` (valeur ajoutée au type `status` du composant, cf. `CHECKING` ajouté à `ConnectionStatus` dans le diagramme de la SFD) tant que sa réponse individuelle de statut n'est pas arrivée
+- [ ] Un appel `$fetch('/connections/{name}/status')` par connexion, tous déclenchés sans attendre les uns des autres juste après la réponse du listing brut (EX-210) — chaque réponse met à jour uniquement l'entrée correspondante du tableau réactif (recherche par `name`, jamais un remplacement global du tableau), sans jamais réordonner ni reconstruire le tableau (EX-211/EX-213 : la position de chaque ligne dans le tableau source ne bouge jamais, seul son contenu est muté en place une fois sa réponse reçue)
+- [ ] Indicateur de chargement dédié par ligne tant que `status === 'checking'` (EX-212), à la place des colonnes statut/nombre de modèles — réutilise `Spinner.vue` (Phase 5) plutôt qu'un nouveau composant
+- [ ] Plafond de 10 secondes par connexion (EX-214), à trancher/implémenter côté front (`AbortController` ou équivalent sur chaque appel individuel à `/connections/{name}/status`) — passé ce délai, la ligne correspondante est marquée `unavailable` ; une réponse arrivant après coup pour cette même connexion est ignorée pour l'affichage en cours (limite déjà actée dans la SFD), ce qui suppose de comparer un jeton/indicateur de requête toujours en cours avant d'appliquer une réponse tardive, pas seulement d'abandonner la `Promise`. **À distinguer explicitement du réglage existant `modelbase.connection_timeout`** (3s par défaut, `ConnectionAvailability`, `PDO::ATTR_TIMEOUT`/`login_timeout`, mysql/mariadb/sqlsrv uniquement, cf. Phase 2) : ce dernier borne la tentative de connexion *côté serveur*, seulement pour les drivers qui exposent un tel réglage (pgsql/sqlite non couverts, limite déjà documentée en Phase 2/EX-208). EX-214 exige un plafond uniforme *tous drivers confondus* — rien côté Laravel ne peut interrompre uniformément une tentative PDO déjà lancée sur un driver sans réglage de timeout, d'où un plafond nécessairement appliqué côté front, en complément du réglage serveur existant (qui continue de s'appliquer en amont pour mysql/mariadb/sqlsrv, sous les 10 secondes)
+- [ ] Tests Feature à écrire : `GET /connections` ne renvoie plus que `name`/`driver`, sans appeler `ConnectionAvailability`/`EloquentModelFinder` (vérifiable en simulant une connexion injoignable dont le timeout ferait échouer le test si elle était encore interrogée à cet endpoint) ; `GET /connections/{connection}/status` reprend les scénarios déjà couverts par `ConnectionListingTest` pour le statut/comptage (disponible, indisponible, comptage limité aux connexions disponibles EX-205), plus connexion inconnue/exclue en 404
+- [ ] Pas de harnais de test front existant (limite déjà documentée à toutes les phases front) : le comportement progressif (affichage immédiat, mise à jour ligne par ligne, ordre stable, abandon après 10s) sera vérifié manuellement contre l'environnement `docker-compose` réel, notamment en simulant une connexion lente/injoignable (hôte local sur un port fermé, même technique que `ConnectionListingTest`)
+
+Points d'attention / points ouverts à trancher avant développement :
+- Le comptage de modèles reste limité aux connexions disponibles (EX-205, inchangé) — `status()` ne calcule `model_count` que si `isAvailable()` est vrai, comme le fait déjà `describe()` aujourd'hui.
+- Point ouvert déjà documenté dans la SFD (limite EX-213) : l'ordre d'affichage suit l'ordre d'énumération de `config('database.connections')`, aucun critère de tri alternatif (alphabétique ou autre) n'est demandé — à ne pas trancher unilatéralement en développant, la SFD signale volontairement ce point comme ouvert.
+- Nombre de requêtes HTTP simultanées non borné côté front (une par connexion configurée, hors connexions exclues) — sans impact avec le nombre de connexions de la démo (5), mais à surveiller si une application hôte réelle en déclare beaucoup plus.
+- `frontend/i18n/locales/{fr,en}.json` : nouvelle clé de statut (`connections.statusChecking` ou équivalent) à ajouter pour l'état `checking`, cohérent avec EX-118 (statut = texte d'IHM, pas une donnée métier).
+- Build front à republier (`resources/dist/modelbase/`) une fois cette phase développée, via le contournement déjà documenté (Phases 7/9/9bis/13/14/15) pour ce shell Windows/WSL.
+
+## Phase 17 — Performance du listing des modèles (module 3, EX-302 complétée, EX-312)
+
+Identifiée le 2026-08-04 suite à une question de l'utilisateur sur la lenteur du listing de module 3. Analyse du chemin d'exécution actuel :
+- `EloquentModelFinder::all()` (`src/Support/EloquentModelFinder.php`) rescanne le répertoire `app/Models` du filesystem et réinstancie chaque classe via `ReflectionClass` à chaque appel HTTP, sans aucun cache.
+- `ModelRepository::describe()` (`src/Support/ModelRepository.php`) exécute jusqu'à 3 requêtes DB par modèle listé (`hasTable()`, `table($table)->count()`, `getColumnListing($table)`) — un N+1 caractérisé pour une connexion à M modèles.
+- Côté front, le filtre de recherche (EX-304, `frontend/pages/connections/[connection]/index.vue`) relance un appel API complet à chaque frappe (après debounce) au lieu de filtrer localement la liste déjà chargée.
+- L'utilisateur a validé qu'une valeur approchée du nombre d'items est acceptable pour les grandes tables (nouvelle exigence EX-312), ce qui permet en plus d'envisager d'éviter un `COUNT(*)` exact coûteux sur ces tables selon la solution retenue en implémentant.
+
+Non développée : plan ci-dessous, à affiner en implémentant.
+
+- [ ] Mise en cache de la découverte des modèles (`EloquentModelFinder::all()`/`forConnection()`) — éviter le rescan filesystem + `ReflectionClass` à chaque requête ; mécanisme de cache et durée de vie à trancher en implémentant (les modèles déclarés par l'app hôte ne changent qu'au déploiement, pas en cours de process)
+- [ ] Suppression du N+1 de `ModelRepository::describe()` : récupérer une seule fois la liste des tables existantes de la connexion (`Schema::getTableListing()`) plutôt qu'un `hasTable()` par modèle
+- [ ] Valeur approchée du nombre d'items pour les grandes tables (EX-312, complète EX-302) : nombre brut si < 10^3 (ex. `842`), suffixe `K` si < 10^6 (ex. `42K`), suffixe `G` si < 10^9 (ex. `3G`), suffixe `T` sinon — arrondi/décimales à trancher en implémentant. L'approximation ne concerne que cet affichage (limite EX-312 déjà actée dans la SFD : filtrage/tri/pagination du module 4 restent exacts)
+- [ ] Filtre de recherche du listing (EX-304) appliqué côté client sur la liste déjà chargée plutôt que par un nouvel appel API à chaque frappe — l'appel API initial (un seul, par connexion) reste la seule source de données
+- [ ] Tests Unit à écrire/adapter : `EloquentModelFinderTest` (cache effectif, invalidation si applicable), `ModelRepositoryTest` (absence de `hasTable()` par modèle, format d'approximation du nombre d'items pour les seuils 10^3/10^6/10^9)
+- [ ] Tests Feature à adapter : `ModelListingTest` (nombre d'items approché au-delà des seuils, exact en-deçà)
+
+Points d'attention / points ouverts à trancher avant développement :
+- Mécanisme de cache pour la découverte des modèles à choisir en implémentant (cache Laravel avec TTL court, ou simple mémoïsation à l'échelle de la requête HTTP) — à la différence d'EX-204/EX-208 (détection de disponibilité d'une connexion, explicitement sans cache), rien dans la SFD n'interdit de cacher la découverte des modèles, qui ne dépend que du code déployé.
+- Le `COUNT(*)` exact reste nécessaire pour distinguer les seuils (ex. savoir si une table est sous ou au-dessus de 10^6 lignes) sauf à utiliser une estimation moteur (ex. `information_schema`/statistiques du SGBD, potentiellement approximative et non uniforme entre drivers mysql/pgsql/sqlite) — arbitrage à faire en implémentant entre exactitude du seuil et coût de la requête.
+- Build front à republier (`resources/dist/modelbase/`) une fois cette phase développée, via le contournement déjà documenté (Phases 7/9/9bis/13/14/15/16) pour ce shell Windows/WSL.
