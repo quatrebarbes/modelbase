@@ -39,8 +39,8 @@ const props = withDefaults(defineProps<{
   cancellable?: boolean
   // EX-465/EX-468 : bascule le formulaire en mode modification différentielle
   // (payload limité aux colonnes changées, validation désactivée tant
-  // qu'aucune colonne n'est modifiée) — la création (EX-412, `<limite>`)
-  // continue de transmettre toutes les colonnes renseignées.
+  // qu'aucune colonne n'est modifiée) — la création continue de transmettre
+  // toutes les colonnes renseignées.
   editing?: boolean
 }>(), {
   initialValues: () => ({}),

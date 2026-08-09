@@ -167,9 +167,11 @@ defineExpose({ hasActiveFilterOrSort, clearFiltersAndSort })
           @keydown.enter="goToItem(item)"
         >
           <td v-for="column in rowColumns" :key="column">
-            <!-- EX-439 : indicateur visuel distinctif d'un item soft-deleted, porté par la colonne deleted_at elle-même -->
-            <span v-if="column === 'deleted_at' && item.is_trashed" class="item-list__trashed-date">{{ item[column] }}</span>
-            <template v-else>{{ item[column] }}</template>
+            <div class="item-list__cell">
+              <!-- EX-439 : indicateur visuel distinctif d'un item soft-deleted, porté par la colonne deleted_at elle-même -->
+              <span v-if="column === 'deleted_at' && item.is_trashed" class="item-list__trashed-date">{{ item[column] }}</span>
+              <template v-else>{{ item[column] }}</template>
+            </div>
           </td>
         </tr>
       </tbody>
@@ -203,6 +205,15 @@ defineExpose({ hasActiveFilterOrSort, clearFiltersAndSort })
 
 .item-list__trashed-date {
   color: var(--color-error-text);
+}
+
+/* Cellules de données tronquées à 3 lignes max, avec ellipse si le contenu déborde */
+.item-list__cell {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .item-list__filter-input {

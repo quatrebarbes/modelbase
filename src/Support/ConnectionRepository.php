@@ -19,8 +19,11 @@ class ConnectionRepository
     }
 
     /**
-     * EX-209 : nom et driver uniquement, sans E/S (pas de résolution de
-     * statut ni de comptage de modèles).
+     * EX-209/EX-215 : nom et driver uniquement, sans E/S (pas de résolution
+     * de statut ni de comptage de modèles), triés par nom (insensible à la
+     * casse — tri PHP simple, sans dépendance à `ext-intl`, les noms de
+     * connexion étant des identifiants techniques plutôt que du texte
+     * utilisateur nécessitant un tri sensible aux accents).
      *
      * @return array<int, array{name: string, driver: string|null}>
      */
@@ -34,6 +37,7 @@ class ConnectionRepository
                 'name' => $name,
                 'driver' => $config['driver'] ?? null,
             ])
+            ->sortBy('name', SORT_NATURAL | SORT_FLAG_CASE)
             ->values()
             ->all();
     }

@@ -96,4 +96,33 @@ class ConnectionListingTest extends TestCase
 
         $this->actingAs($user)->getJson($this->endpoint())->assertOk();
     }
+
+    public function test_it_lists_connections_in_alphabetical_order(): void
+    {
+        // EX-215 : remplace entièrement `database.connections` (plutôt que de
+        // s'ajouter à celles de `defineEnvironment()`/au squelette par défaut
+        // de Testbench, sqlite/mysql/mariadb/pgsql/sqlsrv/testing) pour un
+        // scénario maîtrisé — ordre de configuration volontairement inverse
+        // de l'ordre alphabétique attendu, avec une casse mixte pour couvrir
+        // le tri insensible à la casse (`Zebra` avant `alpha`).
+        $this->app['config']->set('database.connections', [
+            // `testing` reste présente (porte le schéma migré du test en cours,
+            // cf. commentaire de `defineEnvironment()` ci-dessus) mais exclue
+            // du listing, comme dans le reste de cette classe de test.
+            'testing' => $this->app['config']->get('database.connections.testing'),
+            'Zebra' => ['driver' => 'sqlite', 'database' => ':memory:'],
+            'alpha' => ['driver' => 'sqlite', 'database' => ':memory:'],
+            'mu' => ['driver' => 'sqlite', 'database' => ':memory:'],
+        ]);
+        $this->app['config']->set('modelbase.excluded_connections', ['testing']);
+
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint());
+
+        $response->assertOk();
+        $names = collect($response->json('data'))->pluck('name')->all();
+
+        $this->assertSame(['alpha', 'mu', 'Zebra'], $names);
+    }
 }

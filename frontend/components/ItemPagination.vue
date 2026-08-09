@@ -13,7 +13,7 @@ const page = defineModel<number>('page', { required: true })
 // EX-452 : nombre de lignes par page, choisi parmi un ensemble prédéfini.
 const perPage = defineModel<number>('perPage', { required: true })
 
-// EX-452 : ensemble de valeurs prédéfinies non figé par la SFD (cf. <limite> EX-452).
+// EX-452 : ensemble de valeurs prédéfinies non figé par la SFD.
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
 
 // EX-453 : accès direct à n'importe quelle page — un seul champ éditable
