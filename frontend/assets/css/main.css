@@ -129,6 +129,54 @@ body {
   outline-offset: -2px;
 }
 
+/* En-tête de colonne triable (ItemList.vue, RelationTable.vue) */
+.data-table__sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+}
+
+.data-table__sort-indicator {
+  font-size: 0.75em;
+}
+
+.data-table__filter-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.data-table__filter-input:hover {
+  border-color: var(--color-hover);
+}
+
+.data-table__filter-input:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+}
+
+/* Cellule de données tronquée à 3 lignes max, avec ellipse si le contenu déborde */
+.data-table__cell {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Barre de navigation/recherche au-dessus d'un tableau ou formulaire */
 .toolbar {
   display: flex;

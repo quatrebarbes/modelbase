@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // EX-425 à EX-431 : un tableau paginé par relation Eloquent déclarée par le
 // modèle hôte, sous les valeurs de colonnes de la fiche détail d'un item.
-// EX-470 à EX-473 : filtre par colonne et tri, sur le modèle d'ItemList.vue
-// (EX-432 à EX-436), mais avec un état propre à cette instance du composant
-// (EX-471) — ni partagé entre tableaux, ni reflété dans l'URL de la page.
+// EX-470 à EX-473 : filtre par colonne et tri, mécanique partagée avec
+// ItemList.vue (EX-432 à EX-436) via useSortAndFilter/useFilteredListing,
+// mais avec un état propre à cette instance du composant (EX-471) — ni
+// partagé entre tableaux, ni reflété dans l'URL de la page.
 type RelationDescriptor = {
   name: string
   type: string
@@ -20,8 +21,6 @@ type ColumnSchema = {
   technical: boolean
   fillable: boolean
 }
-
-type SortEntry = { column: string; direction: 'asc' | 'desc' }
 
 const props = withDefaults(defineProps<{
   connection: string
@@ -42,22 +41,6 @@ const perPage = usePersistedPerPage(`relation:${props.connection}:${props.model}
 
 const filters = ref<Record<string, string>>({})
 const sort = ref('')
-// Filtres texte débounced (300 ms), même pattern que
-// connections/[connection]/models/[model]/index.vue.
-const debouncedFilters = ref<Record<string, string>>({})
-let debounceTimer: ReturnType<typeof setTimeout>
-watch(filters, (value) => {
-  clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => {
-    debouncedFilters.value = { ...value }
-    page.value = 1
-  }, 300)
-}, { deep: true })
-
-// Changer le nombre de lignes par page (EX-452), le tri ou un filtre remet la
-// page courante à 1, qui peut ne plus exister avec le nouveau découpage.
-watch(perPage, () => { page.value = 1 })
-watch(sort, () => { page.value = 1 })
 
 // EX-472 : schéma des colonnes du modèle lié, pour connaître leur type
 // (filtre "contient" vs égalité stricte, EX-433) — n'est interrogé que si la
@@ -73,17 +56,7 @@ const { data: columnsData } = await useAsyncData(
 const columns = computed<ColumnSchema[]>(() => columnsData.value?.data ?? [])
 const columnTypeByName = computed(() => Object.fromEntries(columns.value.map((c) => [c.column, c.type])))
 
-const queryParams = computed(() => {
-  const query: Record<string, string | number> = { page: page.value, per_page: perPage.value }
-
-  if (sort.value) query.sort = sort.value
-
-  for (const [column, value] of Object.entries(debouncedFilters.value)) {
-    query[`filter[${column}]`] = value
-  }
-
-  return query
-})
+const { queryParams } = useFilteredListing({ page, perPage, filters, sort })
 
 // EX-431/EX-473 : une relation non navigable n'est jamais interrogée — ni
 // pour son listing, ni pour son filtre/tri — l'API bloquerait de toute façon
@@ -118,89 +91,19 @@ function goToRelatedItem(row: Record<string, unknown>) {
   navigateTo(`/connections/${props.relation.related_connection}/models/${props.relation.related_model}/items/${keyOf(row)}`)
 }
 
-function parseSort(value: string): SortEntry[] {
-  return value
-    ? value.split(',').filter(Boolean).map((segment) => segment.startsWith('-')
-      ? { column: segment.slice(1), direction: 'desc' as const }
-      : { column: segment, direction: 'asc' as const })
-    : []
-}
-
-function stringifySort(entries: SortEntry[]): string {
-  return entries.map((entry) => (entry.direction === 'desc' ? `-${entry.column}` : entry.column)).join(',')
-}
-
-const sortEntries = computed(() => parseSort(sort.value))
-
-function sortRank(column: string): number | null {
-  const index = sortEntries.value.findIndex((entry) => entry.column === column)
-  return index === -1 ? null : index + 1
-}
-
-function sortDirection(column: string): 'asc' | 'desc' | undefined {
-  return sortEntries.value.find((entry) => entry.column === column)?.direction
-}
-
-// Clic simple = tri par cette seule colonne (asc -> desc -> aucun tri) ;
-// Maj+clic = ajoute/retire cette colonne comme critère de tri secondaire,
-// sans perdre les colonnes de tri déjà actives (priorité = ordre d'ajout) —
-// même comportement qu'ItemList.vue (EX-436).
-function toggleSort(column: string, additive: boolean) {
-  let entries = sortEntries.value
-  const index = entries.findIndex((entry) => entry.column === column)
-
-  if (!additive) {
-    entries = entries.length === 1 && index === 0
-      ? (entries[0].direction === 'asc' ? [{ column, direction: 'desc' as const }] : [])
-      : [{ column, direction: 'asc' as const }]
-  } else if (index === -1) {
-    entries = [...entries, { column, direction: 'asc' as const }]
-  } else if (entries[index].direction === 'asc') {
-    entries = entries.map((entry, i) => (i === index ? { ...entry, direction: 'desc' as const } : entry))
-  } else {
-    entries = entries.filter((_, i) => i !== index)
-  }
-
-  sort.value = stringifySort(entries)
-}
-
-function setFilter(column: string, value: string) {
-  const next = { ...filters.value }
-
-  if (value === '') {
-    delete next[column]
-  } else {
-    next[column] = value
-  }
-
-  filters.value = next
-}
-
-function clearFiltersAndSort() {
-  filters.value = {}
-  debouncedFilters.value = {}
-  sort.value = ''
-}
-
-const hasActiveFilterOrSort = computed(() => sort.value !== '' || Object.keys(filters.value).length > 0)
+// EX-471 : filtre/tri sur le modèle d'ItemList.vue (EX-432 à EX-436), mais
+// avec un état propre à cette instance (ni partagé entre tableaux, ni
+// reflété dans l'URL) — cf. useSortAndFilter().
+const { sortEntries, sortRank, sortDirection, toggleSort, setFilter, hasActiveFilterOrSort } =
+  useSortAndFilter(sort, filters)
 </script>
 
 <template>
   <section class="relation-table">
-    <div v-if="showTitle || hasActiveFilterOrSort" class="relation-table__header">
-      <!-- EX-426 : quand plusieurs relations sont affichées via des onglets
-           (RelationTabs.vue), le libellé de l'onglet actif porte déjà ce nom —
-           le titre ici serait redondant. -->
-      <h2 v-if="showTitle">{{ relation.name }}</h2>
-      <button
-        v-if="hasActiveFilterOrSort"
-        type="button"
-        class="btn"
-        @click="clearFiltersAndSort"
-      >
-        {{ $t('items.clearFiltersAndSorts') }}
-      </button>
-    </div>
+    <!-- EX-426 : quand plusieurs relations sont affichées via des onglets
+         (RelationTabs.vue), le libellé de l'onglet actif porte déjà ce nom —
+         le titre ici serait redondant. -->
+    <h2 v-if="showTitle">{{ relation.name }}</h2>
 
     <!-- EX-431 : connexion cible indisponible, indication sans lien — jamais
          de filtre ni de tri proposé dans ce cas (EX-473). -->
@@ -218,11 +121,11 @@ const hasActiveFilterOrSort = computed(() => sort.value !== '' || Object.keys(fi
               <button
                 v-if="columnTypeByName[column]"
                 type="button"
-                class="item-list__sort-btn"
+                class="data-table__sort-btn"
                 @click="toggleSort(column, $event.shiftKey)"
               >
                 {{ column }}
-                <span v-if="sortRank(column)" class="item-list__sort-indicator">
+                <span v-if="sortRank(column)" class="data-table__sort-indicator">
                   {{ sortDirection(column) === 'desc' ? '▼' : '▲' }}<sup v-if="sortEntries.length > 1">{{ sortRank(column) }}</sup>
                 </span>
               </button>
@@ -235,7 +138,7 @@ const hasActiveFilterOrSort = computed(() => sort.value !== '' || Object.keys(fi
               <input
                 v-if="columnTypeByName[column] && columnTypeByName[column] !== 'json'"
                 type="text"
-                class="item-list__filter-input"
+                class="data-table__filter-input"
                 :aria-label="column"
                 :placeholder="$t('items.filterPlaceholder')"
                 :value="filters[column] ?? ''"
@@ -252,7 +155,9 @@ const hasActiveFilterOrSort = computed(() => sort.value !== '' || Object.keys(fi
             @click="goToRelatedItem(row)"
             @keydown.enter="goToRelatedItem(row)"
           >
-            <td v-for="column in rowColumns" :key="column">{{ row[column] }}</td>
+            <td v-for="column in rowColumns" :key="column">
+              <div class="data-table__cell">{{ row[column] }}</div>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -267,53 +172,8 @@ const hasActiveFilterOrSort = computed(() => sort.value !== '' || Object.keys(fi
 </template>
 
 <style scoped>
-.relation-table__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
 .relation-table__unavailable {
   color: var(--color-text-muted);
   font-style: italic;
-}
-
-.item-list__sort-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  border: none;
-  background: none;
-  padding: 0;
-  font: inherit;
-  font-weight: 600;
-  color: inherit;
-  cursor: pointer;
-}
-
-.item-list__sort-indicator {
-  font-size: 0.75em;
-}
-
-.item-list__filter-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.25rem 0.6rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background: var(--color-bg);
-  color: var(--color-text);
-  font: inherit;
-  transition: border-color 0.15s ease;
-}
-
-.item-list__filter-input:hover {
-  border-color: var(--color-hover);
-}
-
-.item-list__filter-input:focus {
-  outline: none;
-  border-color: var(--color-border-focus);
 }
 </style>

@@ -39,36 +39,17 @@ const filters = ref<Record<string, string>>(parseInitialFilters())
 // EX-438 : '' (défaut, items actifs uniquement), 'with' ou 'only'.
 const trashed = ref(typeof route.query.trashed === 'string' ? route.query.trashed : '')
 watch(trashed, () => { page.value = 1 })
-// Filtres texte débounced (300 ms) pour ne pas relancer une requête à chaque
-// caractère tapé, même pattern que connections/[connection]/index.vue.
-const debouncedFilters = ref<Record<string, string>>({ ...filters.value })
-let debounceTimer: ReturnType<typeof setTimeout>
-watch(filters, (value) => {
-  clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => {
-    debouncedFilters.value = { ...value }
-    page.value = 1
-  }, 300)
-}, { deep: true })
 
-// Changer le tri remet la page à 1, une page 2 pouvant ne plus exister une
-// fois le tri (ou un filtre, ci-dessus) appliqué. Changer le nombre de lignes
-// par page (EX-452) a le même effet, le numéro de page courant n'ayant plus
-// forcément de sens avec le nouveau découpage.
-watch(sort, () => { page.value = 1 })
-watch(perPage, () => { page.value = 1 })
-
-const queryParams = computed(() => {
-  const query: Record<string, string | number> = { page: page.value, per_page: perPage.value }
-
-  if (sort.value) query.sort = sort.value
-  if (trashed.value) query.trashed = trashed.value
-
-  for (const [column, value] of Object.entries(debouncedFilters.value)) {
-    query[`filter[${column}]`] = value
-  }
-
-  return query
+// EX-452 : changer le nombre de lignes par page a le même effet que changer
+// le tri/un filtre (remise à 1 de la page courante) — géré par
+// useFilteredListing(), qui porte aussi le débounce (300 ms) des filtres
+// texte, même pattern que connections/[connection]/index.vue.
+const { queryParams } = useFilteredListing({
+  page,
+  perPage,
+  filters,
+  sort,
+  extraQuery: () => (trashed.value ? { trashed: trashed.value } : {}),
 })
 
 // EX-432 à EX-436 : reflète page/filtre/tri dans l'URL pour rester
