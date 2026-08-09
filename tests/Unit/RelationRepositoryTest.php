@@ -2,8 +2,13 @@
 
 namespace Quatrebarbes\Modelbase\Tests\Unit;
 
+use Quatrebarbes\Modelbase\Support\ColumnIntrospector;
 use Quatrebarbes\Modelbase\Support\ConnectionAvailability;
+use Quatrebarbes\Modelbase\Support\DatabaseErrorTranslator;
 use Quatrebarbes\Modelbase\Support\EloquentModelFinder;
+use Quatrebarbes\Modelbase\Support\ItemFilterException;
+use Quatrebarbes\Modelbase\Support\ItemQueryFilter;
+use Quatrebarbes\Modelbase\Support\ItemRepository;
 use Quatrebarbes\Modelbase\Support\ModelResolver;
 use Quatrebarbes\Modelbase\Support\RelationIntrospector;
 use Quatrebarbes\Modelbase\Support\RelationRepository;
@@ -61,7 +66,26 @@ class RelationRepositoryTest extends TestCase
             ['category_id' => 1, 'name' => 'Wrench'],
         ]);
 
+        // EX-472 : table pivot d'une relation belongsToMany, dotée d'un
+        // attribut ('note') propre au lien plutôt qu'au modèle lié — utilisée
+        // pour vérifier que le filtre/tri d'un tableau d'objets liés ne porte
+        // jamais sur les attributs de cette table pivot.
+        Schema::connection('primary')->create('tags', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+        });
+
+        Schema::connection('primary')->create('product_tag', function (Blueprint $table) {
+            $table->unsignedBigInteger('product_id');
+            $table->unsignedBigInteger('tag_id');
+            $table->string('note')->nullable();
+        });
+
+        DB::connection('primary')->table('tags')->insert(['id' => 1, 'name' => 'Sharp']);
+        DB::connection('primary')->table('product_tag')->insert(['product_id' => 1, 'tag_id' => 1, 'note' => 'fragile']);
+
         $this->putCategoryWithRelation();
+        $this->putModel('RelRepoTag', 'tags', 'primary', ['name']);
         $this->putProductWithRelations();
     }
 
@@ -77,9 +101,16 @@ class RelationRepositoryTest extends TestCase
         return app()->getNamespace().'Models';
     }
 
-    private function putModel(string $class, string $table, string $connection): void
+    /**
+     * @param  array<int, string>  $fillable  EX-422 : seule une colonne
+     *   fillable/castée/technique/de relation est exposée par
+     *   `ItemRepository::columnsFor()` — nécessaire ici pour que le nom du
+     *   modèle lié reste filtrable/triable (EX-472).
+     */
+    private function putModel(string $class, string $table, string $connection, array $fillable = []): void
     {
         $namespace = $this->namespace();
+        $fillableList = implode(', ', array_map(fn (string $column) => "'{$column}'", $fillable));
 
         File::put(app_path("Models/{$class}.php"), <<<PHP
         <?php
@@ -93,6 +124,8 @@ class RelationRepositoryTest extends TestCase
             protected \$connection = '{$connection}';
 
             protected \$table = '{$table}';
+
+            protected \$fillable = [{$fillableList}];
 
             public \$timestamps = false;
         }
@@ -154,6 +187,7 @@ class RelationRepositoryTest extends TestCase
 
         use Illuminate\Database\Eloquent\Model;
         use Illuminate\Database\Eloquent\Relations\BelongsTo;
+        use Illuminate\Database\Eloquent\Relations\BelongsToMany;
         use Illuminate\Database\Eloquent\Relations\HasMany;
 
         class RepoProductWithRelations extends Model
@@ -180,6 +214,11 @@ class RelationRepositoryTest extends TestCase
             {
                 return \$this->hasMany(RepoUnreachableProduct::class, 'category_id', 'category_id');
             }
+
+            public function tags(): BelongsToMany
+            {
+                return \$this->belongsToMany(RelRepoTag::class, 'product_tag', 'product_id', 'tag_id')->withPivot('note');
+            }
         }
         PHP);
 
@@ -194,8 +233,9 @@ class RelationRepositoryTest extends TestCase
     {
         $finder = new EloquentModelFinder;
         $resolver = new ModelResolver($finder);
+        $items = new ItemRepository($resolver, $finder, new ColumnIntrospector, new DatabaseErrorTranslator, new ItemQueryFilter);
 
-        return new RelationRepository($resolver, new RelationIntrospector, app(ConnectionAvailability::class));
+        return new RelationRepository($resolver, new RelationIntrospector, app(ConnectionAvailability::class), $items, new ItemQueryFilter);
     }
 
     public function test_for_model_lists_every_declared_relation(): void
@@ -304,5 +344,86 @@ class RelationRepositoryTest extends TestCase
         $this->expectException(RelationUnavailableException::class);
 
         $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'unreachableSiblings', 1, 15);
+    }
+
+    /**
+     * EX-470/EX-433 : filtre "contient" insensible à la casse sur une colonne
+     * texte du modèle lié, même comportement que le listing standard.
+     */
+    public function test_paginate_related_filters_rows_by_column_value(): void
+    {
+        $page = $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'siblings', 1, 15, ['name' => 'ham']);
+
+        $this->assertSame(1, $page['meta']['total']);
+        $this->assertSame('Hammer', $page['data'][0]['name']);
+    }
+
+    /**
+     * EX-470/EX-435 : tri sur une colonne du modèle lié, même comportement que
+     * le listing standard.
+     */
+    public function test_paginate_related_sorts_rows_by_column(): void
+    {
+        $page = $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'siblings', 1, 15, [], '-name');
+
+        $this->assertSame('Wrench', $page['data'][0]['name']);
+        $this->assertSame('Hammer', $page['data'][1]['name']);
+    }
+
+    /**
+     * EX-472 : une colonne inconnue du modèle lié (ici, un nom qui n'existe
+     * ni dans `products` ni dans `categories`) est rejetée plutôt que tentée
+     * telle quelle dans une requête SQL.
+     */
+    public function test_paginate_related_throws_for_a_filter_on_an_unknown_column(): void
+    {
+        $this->expectException(ItemFilterException::class);
+
+        $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'siblings', 1, 15, ['does_not_exist' => 'x']);
+    }
+
+    /**
+     * EX-472 : même garde-fou côté tri.
+     */
+    public function test_paginate_related_throws_for_a_sort_on_an_unknown_column(): void
+    {
+        $this->expectException(ItemFilterException::class);
+
+        $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'siblings', 1, 15, [], 'does_not_exist');
+    }
+
+    /**
+     * EX-472 : `note` est un attribut de la table pivot `product_tag`, pas du
+     * modèle lié (`RelRepoTag`) — exclu du filtre/tri au même titre qu'il
+     * n'est pas affiché dans l'aperçu du tableau d'objets liés.
+     */
+    public function test_paginate_related_rejects_a_filter_on_a_pivot_column_of_a_belongs_to_many_relation(): void
+    {
+        $this->expectException(ItemFilterException::class);
+
+        $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'tags', 1, 15, ['note' => 'fragile']);
+    }
+
+    /**
+     * EX-472 : à l'inverse, une colonne réelle du modèle lié d'une relation
+     * belongsToMany reste filtrable/triable normalement.
+     */
+    public function test_paginate_related_filters_rows_of_a_belongs_to_many_relation_by_a_related_model_column(): void
+    {
+        $page = $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'tags', 1, 15, ['name' => 'sharp']);
+
+        $this->assertSame(1, $page['meta']['total']);
+    }
+
+    /**
+     * EX-473 : aucun filtre/tri n'est tenté lorsque la relation n'est pas
+     * navigable — l'exception d'indisponibilité doit être levée avant même
+     * qu'un filtre invalide soit évalué (sinon un 422 masquerait le vrai 409).
+     */
+    public function test_paginate_related_throws_unavailable_before_evaluating_an_invalid_filter(): void
+    {
+        $this->expectException(RelationUnavailableException::class);
+
+        $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'unreachableSiblings', 1, 15, ['does_not_exist' => 'x']);
     }
 }

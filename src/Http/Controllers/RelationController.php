@@ -2,6 +2,7 @@
 
 namespace Quatrebarbes\Modelbase\Http\Controllers;
 
+use Quatrebarbes\Modelbase\Support\ItemFilterException;
 use Quatrebarbes\Modelbase\Support\RelationRepository;
 use Quatrebarbes\Modelbase\Support\RelationUnavailableException;
 use Illuminate\Http\Request;
@@ -27,17 +28,25 @@ class RelationController extends Controller
 
     /**
      * EX-427/EX-428/EX-429/EX-430/EX-431 : listing paginé des objets liés
-     * d'une relation donnée de l'item {item} du modèle {model}.
+     * d'une relation donnée de l'item {item} du modèle {model}. EX-470/
+     * EX-472 : `filter[colonne]=valeur` (répétable) et `sort=colonne,-colonne2`
+     * (mêmes noms de query params qu'ItemController::index(), EX-436),
+     * restreints aux colonnes exposées par le modèle lié — une colonne
+     * inconnue, non exposée, ou de la table pivot est rejetée en 422.
      */
     public function items(Request $request, string $connection, string $model, string $item, string $relation)
     {
         $page = (int) $request->query('page', 1);
         $perPage = (int) $request->query('per_page', 15);
+        $filters = (array) $request->query('filter', []);
+        $sort = $request->query('sort');
 
         try {
-            $found = $this->relations->paginateRelated($connection, $model, $item, $relation, $page, max(1, $perPage));
+            $found = $this->relations->paginateRelated($connection, $model, $item, $relation, $page, max(1, $perPage), $filters, $sort);
         } catch (RelationUnavailableException $exception) {
             return response()->json(['message' => $exception->getMessage()], 409);
+        } catch (ItemFilterException $exception) {
+            return response()->json(['message' => 'Filtre ou tri invalide.', 'errors' => $exception->errors()], 422);
         }
 
         if ($found === null) {

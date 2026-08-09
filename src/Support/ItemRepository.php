@@ -90,9 +90,7 @@ class ItemRepository
         if ($filters !== [] || ($sort !== null && $sort !== '')) {
             // EX-432 : colonnes de filtre/tri restreintes à celles exposées
             // par columnsFor() (EX-422), jamais un nom de colonne brut.
-            $columnTypes = collect($this->columnsFor($connection, $instance))
-                ->mapWithKeys(fn (array $column) => [$column['name'] => ColumnType::from($column['type'])])
-                ->all();
+            $columnTypes = $this->columnTypesFor($connection, $instance);
 
             if ($filters !== []) {
                 $this->queryFilter->applyFilters($query, $filters, $columnTypes);
@@ -466,9 +464,13 @@ class ItemRepository
      * contrainte quand les deux existent (cf. `ColumnIntrospector::
      * relationForeignKeys()`).
      *
+     * Public (EX-472) : réutilisée telle quelle par `RelationRepository::
+     * paginateRelated()` pour calculer l'allowlist de colonnes filtrables/
+     * triables du modèle lié d'une relation, sans dupliquer cette logique.
+     *
      * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>
      */
-    private function columnsFor(string $connection, Model $instance): array
+    public function columnsFor(string $connection, Model $instance): array
     {
         $relations = $this->columns->relationForeignKeys($instance);
         $exposed = array_unique(array_merge(
@@ -493,6 +495,22 @@ class ItemRepository
                 ];
             })
             ->values()
+            ->all();
+    }
+
+    /**
+     * EX-432/EX-472 : colonnes filtrables/triables d'un modèle (nom => type),
+     * calculées à partir de la même allowlist que columnsFor() (EX-422) —
+     * extrait en méthode publique pour être réutilisé par
+     * `RelationRepository::paginateRelated()` sur le modèle lié d'une
+     * relation, sans dupliquer cette logique.
+     *
+     * @return array<string, ColumnType>
+     */
+    public function columnTypesFor(string $connection, Model $instance): array
+    {
+        return collect($this->columnsFor($connection, $instance))
+            ->mapWithKeys(fn (array $column) => [$column['name'] => ColumnType::from($column['type'])])
             ->all();
     }
 

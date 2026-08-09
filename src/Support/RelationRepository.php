@@ -25,6 +25,8 @@ class RelationRepository
         private ModelResolver $resolver,
         private RelationIntrospector $relations,
         private ConnectionAvailability $availability,
+        private ItemRepository $items,
+        private ItemQueryFilter $queryFilter,
     ) {
     }
 
@@ -52,11 +54,20 @@ class RelationRepository
      * déjà couverte par la valeur de colonne de clé étrangère (EX-408/
      * EX-410), pas par un tableau distinct au sens d'EX-425.
      *
+     * EX-470/EX-472/EX-473 : `filters`/`sort` (même forme que
+     * `ItemRepository::paginate()`) sont restreints aux colonnes exposées par
+     * le modèle lié (`ItemRepository::columnTypesFor()`, EX-422) — les
+     * attributs de la table pivot d'une relation belongsToMany n'en font pas
+     * partie, jamais exposés ici. Jamais évalués si la relation n'est pas
+     * navigable (RelationUnavailableException levée avant, EX-473).
+     *
+     * @param  array<string, mixed>  $filters
      * @return array{data: array<int, array<string, mixed>>, meta: array{current_page: int, last_page: int, per_page: int, total: int}}|null
      *
      * @throws RelationUnavailableException
+     * @throws ItemFilterException
      */
-    public function paginateRelated(string $connection, string $model, string $itemId, string $relationName, int $page, int $perPage): ?array
+    public function paginateRelated(string $connection, string $model, string $itemId, string $relationName, int $page, int $perPage, array $filters = [], ?string $sort = null): ?array
     {
         $instance = $this->findInstance($connection, $model, $itemId);
 
@@ -78,16 +89,34 @@ class RelationRepository
             );
         }
 
-        $relationQuery = $instance->{$relationName}();
+        // EX-470 : query builder brut (même pattern que Phase 12 pour
+        // SoftDeletes, cf. ItemRepository::paginate()) pour appliquer
+        // ItemQueryFilter::applyFilters()/applySort() — les contraintes
+        // propres à la relation (clé étrangère, jointure pivot pour
+        // belongsToMany) sont déjà posées par Eloquent à la construction de
+        // `$relationQuery` et préservées par toBase().
+        $query = $instance->{$relationName}()->toBase();
+
+        if ($filters !== [] || ($sort !== null && $sort !== '')) {
+            $columnTypes = $this->items->columnTypesFor($descriptor['related_connection'], $relation['related']);
+
+            if ($filters !== []) {
+                $this->queryFilter->applyFilters($query, $filters, $columnTypes);
+            }
+
+            if ($sort !== null && $sort !== '') {
+                $this->queryFilter->applySort($query, $sort, $columnTypes);
+            }
+        }
 
         // EX-454 : même repli sur la première/dernière page qu'ItemRepository::paginate().
-        $lastPage = max(1, (int) ceil($relationQuery->count() / $perPage));
+        $lastPage = max(1, (int) ceil($query->getCountForPagination() / $perPage));
         $currentPage = min(max($page, 1), $lastPage);
 
-        $paginator = $relationQuery->paginate($perPage, ['*'], 'page', $currentPage);
+        $paginator = $query->paginate($perPage, ['*'], 'page', $currentPage);
 
         return [
-            'data' => collect($paginator->items())->map(fn (Model $row) => $row->getAttributes())->all(),
+            'data' => collect($paginator->items())->map(fn ($row) => (array) $row)->all(),
             'meta' => [
                 'current_page' => $paginator->currentPage(),
                 'last_page' => $paginator->lastPage(),

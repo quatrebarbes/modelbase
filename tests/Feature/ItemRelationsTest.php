@@ -65,8 +65,25 @@ class ItemRelationsTest extends TestCase
             ['category_id' => 1, 'name' => 'Wrench'],
         ]);
 
+        // EX-472 : table pivot d'une relation belongsToMany, dotée d'un
+        // attribut ('note') propre au lien plutôt qu'au modèle lié.
+        Schema::connection('primary')->create('item_rel_tags', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+        });
+
+        Schema::connection('primary')->create('item_rel_product_tag', function (Blueprint $table) {
+            $table->unsignedBigInteger('product_id');
+            $table->unsignedBigInteger('tag_id');
+            $table->string('note')->nullable();
+        });
+
+        DB::connection('primary')->table('item_rel_tags')->insert(['id' => 1, 'name' => 'Sharp']);
+        DB::connection('primary')->table('item_rel_product_tag')->insert(['product_id' => 1, 'tag_id' => 1, 'note' => 'fragile']);
+
         $this->putProduct();
         $this->putCategory();
+        $this->putTag();
     }
 
     protected function tearDown(): void
@@ -96,6 +113,7 @@ class ItemRelationsTest extends TestCase
 
         use Illuminate\Database\Eloquent\Model;
         use Illuminate\Database\Eloquent\Relations\BelongsTo;
+        use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
         class ItemRelProduct extends Model
         {
@@ -109,10 +127,39 @@ class ItemRelationsTest extends TestCase
             {
                 return \$this->belongsTo(ItemRelCategory::class, 'category_id');
             }
+
+            public function tags(): BelongsToMany
+            {
+                return \$this->belongsToMany(ItemRelTag::class, 'item_rel_product_tag', 'product_id', 'tag_id')->withPivot('note');
+            }
         }
         PHP);
 
         require_once app_path('Models/ItemRelProduct.php');
+    }
+
+    private function putTag(): void
+    {
+        $namespace = $this->namespace();
+
+        File::put(app_path('Models/ItemRelTag.php'), <<<PHP
+        <?php
+
+        namespace {$namespace};
+
+        use Illuminate\Database\Eloquent\Model;
+
+        class ItemRelTag extends Model
+        {
+            protected \$connection = 'primary';
+
+            protected \$table = 'item_rel_tags';
+
+            protected \$fillable = ['name'];
+        }
+        PHP);
+
+        require_once app_path('Models/ItemRelTag.php');
     }
 
     private function putCategory(): void
@@ -276,6 +323,124 @@ class ItemRelationsTest extends TestCase
         $user = UserFactory::new()->create();
 
         $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'unreachableThing'));
+
+        $response->assertStatus(409);
+    }
+
+    /**
+     * EX-470/EX-433 : filtre "contient" insensible à la casse sur une colonne
+     * texte du modèle lié, même comportement que le listing standard (EX-432
+     * à EX-434).
+     */
+    public function test_it_filters_related_rows_with_a_case_insensitive_contains_match_on_a_text_column(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'products', ['filter' => ['name' => 'HAM']]));
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.name', 'Hammer');
+    }
+
+    /**
+     * EX-434 : plusieurs filtres de colonnes combinés en ET.
+     */
+    public function test_it_combines_multiple_filters_on_related_rows_with_and(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'products', [
+            'filter' => ['category_id' => 1, 'name' => 'Orphan'],
+        ]));
+
+        $response->assertOk();
+        $response->assertJsonCount(0, 'data');
+    }
+
+    /**
+     * EX-435/EX-436 : tri simple et multi-colonnes avec priorité sur le
+     * modèle lié.
+     */
+    public function test_it_sorts_related_rows_by_multiple_columns_in_priority_order(): void
+    {
+        $user = UserFactory::new()->create();
+
+        DB::connection('primary')->table('products')->insert(['category_id' => 1, 'name' => 'Hammer']);
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'products', ['sort' => 'name,-id']));
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.name', 'Hammer');
+        $response->assertJsonPath('data.2.name', 'Wrench');
+        // Parmi les deux "Hammer" (tri primaire), le plus récemment inséré
+        // (id le plus haut) apparaît en premier (tri secondaire -id).
+        $this->assertGreaterThan($response->json('data.1.id'), $response->json('data.0.id'));
+    }
+
+    /**
+     * EX-472 : colonne inconnue du modèle lié — rejetée en 422, jamais
+     * tentée telle quelle dans une requête SQL, même contrat d'erreur
+     * qu'ItemController::index() (EX-432).
+     */
+    public function test_it_rejects_a_filter_on_an_unknown_related_column_with_a_422(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'products', ['filter' => ['does_not_exist' => 'x']]));
+
+        $response->assertStatus(422);
+        $response->assertJsonStructure(['message', 'errors' => ['does_not_exist']]);
+    }
+
+    public function test_it_rejects_a_sort_on_an_unknown_related_column_with_a_422(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'products', ['sort' => 'does_not_exist']));
+
+        $response->assertStatus(422);
+        $response->assertJsonStructure(['message', 'errors' => ['does_not_exist']]);
+    }
+
+    /**
+     * EX-472 : `note` est un attribut de la table pivot `item_rel_product_tag`
+     * de la relation belongsToMany `tags`, pas du modèle lié (`ItemRelTag`) —
+     * exclu du filtre au même titre qu'il n'est pas affiché dans l'aperçu.
+     */
+    public function test_it_rejects_a_filter_on_a_pivot_column_of_a_belongs_to_many_relation_with_a_422(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelProduct', '1', 'tags', ['filter' => ['note' => 'fragile']]));
+
+        $response->assertStatus(422);
+        $response->assertJsonStructure(['message', 'errors' => ['note']]);
+    }
+
+    /**
+     * EX-472 : à l'inverse, une colonne réelle du modèle lié reste filtrable.
+     */
+    public function test_it_filters_a_belongs_to_many_relation_by_a_related_model_column(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelProduct', '1', 'tags', ['filter' => ['name' => 'sharp']]));
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+    }
+
+    /**
+     * EX-473 : aucun filtre/tri n'est tenté lorsque la connexion cible de la
+     * relation est indisponible — même un filtre par ailleurs invalide ne
+     * doit jamais faire passer la réponse de 409 à 422.
+     */
+    public function test_it_returns_409_rather_than_422_for_an_invalid_filter_on_an_unavailable_connection(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'unreachableThing', ['filter' => ['does_not_exist' => 'x']]));
 
         $response->assertStatus(409);
     }
