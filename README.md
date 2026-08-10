@@ -1,9 +1,41 @@
-# Modelbase
+<h1 align="center">
+    <img src="frontend/public/logo.png" alt="Modelbase" width="200"><br />
+    Modelbase
+</h1>
 
 Plug-in Laravel de gestion des données d'une application Laravel : parcours des connexions de bases de données, des modèles Eloquent qu'elles contiennent, et de leurs items — sans données propres au plug-in (tout est introspecté dynamiquement depuis l'application hôte).
 
 **Ce n'est pas une base de données mais une base de modèles.**  
 **This is not a database but a modelbase.**
+
+</td>
+</tr>
+</table>
+
+<table border="0" cellspacing="0" cellpadding="0" style="border:none;border-collapse:collapse;">
+<tr style="border:none;">
+<td width="50%" style="border:none;"><img src="docs/screenshots/01-connexions.png" alt="Liste des connexions"></td>
+<td width="50%" style="border:none;"><img src="docs/screenshots/02-modeles.png" alt="Liste des modèles d'une connexion"></td>
+</tr>
+<tr style="border:none;">
+<td style="border:none;">Connexions de bases de données, avec statut et nombre de modèles résolus dynamiquement</td>
+<td style="border:none;">Modèles Eloquent d'une connexion, avec table, nombre d'items et de colonnes</td>
+</tr>
+<tr style="border:none;">
+<td style="border:none;"><img src="docs/screenshots/03a-items.png" alt="Liste des items d'un modèle"></td>
+<td style="border:none;"><img src="docs/screenshots/03b-relations-modele.png" alt="Diagramme des relations d'un modèle"></td>
+</tr>
+<tr style="border:none;">
+<td style="border:none;">Items d'un modèle, filtrables par colonne</td>
+<td style="border:none;">Diagramme des relations du modèle, accessible depuis la liste des items</td>
+</tr>
+<tr style="border:none;">
+<td colspan="2" style="border:none;"><img src="docs/screenshots/04-item-objets-lies.png" alt="Détail d'un item avec ses objets liés"></td>
+</tr>
+<tr style="border:none;">
+<td colspan="2" style="border:none;">Détail d'un item : clé étrangère résolue (<code>category_id</code>) et relation polymorphique (<code>comments</code>) avec les objets liés</td>
+</tr>
+</table>
 
 ## Prérequis
 
