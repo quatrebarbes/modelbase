@@ -104,6 +104,7 @@ const sortedModels = computed(() => {
         <th v-for="column in columns" :key="column.key" :class="{ 'model-list__count-column': column.numeric }">
           <button type="button" class="model-list__sort-btn" @click="toggleSort(column.key)">
             {{ $t(`models.${column.label}`) }}
+            <!-- EX-315 : indicateur visuel du critère de tri actif -->
             <span v-if="directionFor(column.key)" class="model-list__sort-indicator">
               {{ directionFor(column.key) === 'desc' ? '▼' : '▲' }}
             </span>

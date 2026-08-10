@@ -168,7 +168,7 @@ body {
   border-color: var(--color-border-focus);
 }
 
-/* Cellule de données tronquée à 3 lignes max, avec ellipse si le contenu déborde */
+/* EX-469 : cellule de données tronquée à 3 lignes max, avec ellipse si le contenu déborde */
 .data-table__cell {
   display: -webkit-box;
   -webkit-line-clamp: 3;
