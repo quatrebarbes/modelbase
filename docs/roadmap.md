@@ -1,6 +1,14 @@
 # Roadmap
 
-Dernière mise à jour : 2026-08-10 — audit de cohérence SFD ↔ code (aucune exigence active EX-101 à EX-473 non implémentée). Trois paragraphes narratifs de cette section « Historique » affirmaient à tort qu'EX-313 à EX-316, EX-465 à EX-468 et EX-470 à EX-473 n'étaient « pas encore développées » alors que les phases correspondantes (20, 21, 23) étaient closes — corrigé ci-dessous, même type d'oubli que celui déjà corrigé précédemment pour EX-452-456/EX-209-213. Deux exigences implémentées sans le tag `EX-XXX` en commentaire exigé par convention ont été régularisées : EX-315 (`frontend/components/ModelList.vue`) et EX-469 (`frontend/assets/css/main.css`). `Support\ConnectionRepository` était la seule classe repository sans test Unit dédié (couverte seulement indirectement via des tests Feature HTTP) — ajouté (`tests/Unit/ConnectionRepositoryTest.php`, 6 tests). Suite complète vérifiée : 303 tests (297 + 6 nouveaux).
+Dernière mise à jour : 2026-08-13 — revue CTO suite à trois modifications de la SFD apportées par l'utilisateur sur les modules 3 et 4 (`docs/sfd/3. Modèles.md`, `docs/sfd/4. Items.md`), aucune encore répercutée dans le code :
+
+1. **EX-302/EX-313 (module 3)** redéfinissent le compteur affiché : non plus le nombre brut de colonnes de la table, mais le nombre de propriétés réellement exposées par le modèle — la même allowlist (fillable ∪ castées ∪ techniques ∪ FK de relation déclarée) qu'EX-422 calcule déjà pour le module 4. `Support\ModelRepository::describe()` compte aujourd'hui `getColumnListing()` brut : écart réel, pas un simple renommage. Cf. Phase 24 ci-dessous (à faire).
+2. **EX-402 (module 4)** tranche enfin le point ouvert documenté depuis la Phase 4a (« colonnes principales du listing, non tranché ») : le listing d'items ne doit désormais afficher que les colonnes exposées par le modèle (EX-422), et seulement celles-ci. Or `ItemRepository::paginate()` renvoie encore la ligne brute complète (`select('*')` implicite du query builder) et `frontend/components/ItemList.vue` déduit ses colonnes de cette ligne — écart réel malgré le commentaire de classe (`ItemRepository`) qui laissait penser le contraire. Cf. Phase 25 ci-dessous (à faire).
+3. **EX-422 (module 4)** est complétée d'une nouvelle exigence **EX-474** : le type de rendu (EX-407) d'une colonne castée doit désormais suivre en priorité une table de correspondance cast Eloquent → type, avec repli explicite sur le schéma de la base (cast non reconnu, colonne FK — prioritaire sur tout cast scalaire —, texte long toujours déduit du schéma). Aucune des méthodes actuelles (`ColumnIntrospector::scalarType()`, `ItemRepository::columnsFor()`) ne lit `Model::getCasts()` pour déterminer le type — écart réel. Cf. Phase 26 ci-dessous (à faire).
+
+Trois écarts SFD ↔ code identifiés, zéro développé à ce stade — mêmes symptômes (compteur/allowlist de colonnes) que ceux déjà rencontrés en Phase 4d/17/23, cf. les extractions déjà faites à ces occasions.
+
+Mise à jour précédente : 2026-08-10 — audit de cohérence SFD ↔ code (aucune exigence active EX-101 à EX-473 non implémentée). Trois paragraphes narratifs de cette section « Historique » affirmaient à tort qu'EX-313 à EX-316, EX-465 à EX-468 et EX-470 à EX-473 n'étaient « pas encore développées » alors que les phases correspondantes (20, 21, 23) étaient closes — corrigé ci-dessous, même type d'oubli que celui déjà corrigé précédemment pour EX-452-456/EX-209-213. Deux exigences implémentées sans le tag `EX-XXX` en commentaire exigé par convention ont été régularisées : EX-315 (`frontend/components/ModelList.vue`) et EX-469 (`frontend/assets/css/main.css`). `Support\ConnectionRepository` était la seule classe repository sans test Unit dédié (couverte seulement indirectement via des tests Feature HTTP) — ajouté (`tests/Unit/ConnectionRepositoryTest.php`, 6 tests). Suite complète vérifiée : 303 tests (297 + 6 nouveaux).
 
 Mise à jour précédente : 2026-08-10 — Phase 23 (EX-470 à EX-473, filtrage et tri des tableaux d'objets liés) développée et close : `ItemRepository::columnsFor()`/nouvelle méthode `columnTypesFor()` rendues publiques et réutilisées par `RelationRepository::paginateRelated()` (paramètres `filters`/`sort`, même forme qu'`ItemRepository::paginate()`, restreints aux colonnes du modèle lié via un query builder brut `toBase()`), `RelationController::items()` (parsing `filter[...]`/`sort`, 422 via `ItemFilterException`), et `frontend/components/RelationTable.vue` (ligne de filtres + en-têtes triables sur le modèle d'`ItemList.vue`, état de filtre/tri propre à chaque instance, non reflété dans l'URL). Tests Feature (`ItemRelationsTest`) et Unit (`RelationRepositoryTest`) complétés (filtre contient/égalité stricte, combinaison ET, tri simple et multi-colonnes, colonne inconnue ou de table pivot belongsToMany → 422, aucun filtre/tri tenté sur une relation non navigable → 409). Suite complète vérifiée (297 tests) et fonctionnement vérifié contre l'environnement docker-compose réel (mysql). Build front republié dans `resources/dist/modelbase/`.
 
@@ -15,7 +23,7 @@ Cette roadmap découle des 4 SFD présentes dans `docs/sfd/` :
 1. Architecture générale (EX-101 à EX-119)
 2. Bases de données (EX-201 à EX-213, EX-215)
 3. Modèles (EX-301 à EX-316)
-4. Items (EX-401 à EX-456, EX-463 à EX-473)
+4. Items (EX-401 à EX-456, EX-463 à EX-474)
 
 Les exigences EX-101 à EX-436 sont toutes développées (Phases 0 à 11 ci-dessous, closes).
 
@@ -86,6 +94,9 @@ L'exigence sur le tri alphabétique du listing des connexions (module 2, section
 | 21    | Modification différentielle    | ✅ fait    |
 | 22    | Ajustements ergonomiques       | ✅ fait    |
 | 23    | Filtre/tri tableaux liés       | ✅ fait    |
+| 24    | Nombre de propriétés (modèles) | 🔜 à faire |
+| 25    | Listing items = colonnes exposées | 🔜 à faire |
+| 26    | Cast Eloquent → type de rendu  | 🔜 à faire |
 
 ---
 
@@ -617,3 +628,61 @@ Points tranchés au chiffrage :
 - Le debounce 300 ms des filtres texte d'`ItemList.vue` (Phase 11) a été repris sur `RelationTable.vue`, par cohérence d'interface.
 - Suite complète de tests (297 tests, `vendor/bin/phpunit`) vérifiée sans régression ; fonctionnement vérifié contre l'environnement docker-compose réel (mysql) — filtre, tri et rejet 422 d'une colonne inconnue via l'API, rendu SSR de `RelationTable.vue` (en-têtes triables et champs de filtre présents pour les 9 colonnes du modèle `Product`). Vérification uniquement via rendu SSR/API (pas d'interaction navigateur réelle), faute d'outil d'automatisation navigateur disponible dans cet environnement.
 - **Gap d'implémentation corrigé (signalé par l'utilisateur le 2026-08-10)** : EX-427 exige la « même logique d'aperçu » que le listing standard, donc la troncature à 3 lignes EX-469 (`.item-list__cell`, Phase 22) aurait dû s'appliquer aux tableaux d'objets liés dès son introduction — `RelationTable.vue` affichait pourtant `{{ row[column] }}` en clair dans chaque `<td>`, sans classe de troncature, contrairement à `ItemList.vue`. Corrigé en enveloppant la valeur de cellule dans un `<div class="item-list__cell">` et en dupliquant la règle CSS scoped (`-webkit-line-clamp: 3`, etc.) dans `RelationTable.vue` — pas de classe partagée entre les deux composants, les styles `scoped` de Vue ne traversant pas les composants. Build front republié.
+
+## Phase 24 — Nombre de propriétés du listing des modèles (module 3, EX-302/EX-313 mis à jour)
+
+Ajoutée à la SFD le 2026-08-13. EX-302/EX-313 substituent au nombre brut de colonnes de la table (`column_count`, calculé aujourd'hui par `Support\ModelRepository::describe()` via `count($connection->getSchemaBuilder()->getColumnListing($table))`) le nombre de **propriétés** réellement exposées par le modèle — définies par la SFD comme la même allowlist que celle qu'`ItemRepository::columnsFor()` calcule déjà pour le module 4 (EX-422) : `$fillable` ∪ attributs castés (`getCasts()`) ∪ colonnes techniques (clé primaire, timestamps) ∪ clés étrangères déclarées via une relation Eloquent (`ColumnIntrospector::relationForeignKeys()`). Écart réel entre SFD et code, pas un simple renommage de champ API — la SFD ajoute d'ailleurs un avertissement explicite : un modèle sans `$fillable`/cast/relation `belongsTo` ne verra plus compter que ses colonnes techniques, potentiellement très inférieur au nombre réel de colonnes de la table.
+
+- [ ] Extraire de `ItemRepository` le calcul de l'ensemble des noms de colonnes exposées (aujourd'hui entremêlé dans `columnsFor()` + la méthode privée `technicalColumns()`) vers une méthode réutilisable par `ModelRepository`, qui n'a besoin que du compte, pas du détail décoré (type/FK) que renvoie `columnsFor()` — candidat naturel : `ColumnIntrospector`, qui connaît déjà `relationForeignKeys()`, plutôt qu'une nouvelle classe. Même logique d'extraction que celle déjà faite en Phase 23 pour `columnTypesFor()`, à ne pas dupliquer une troisième fois.
+- [ ] `Support\ModelRepository::describe()` : renommer `column_count` → `property_count` dans la réponse de `GET /connections/{connection}/models`, calculé via l'extraction ci-dessus (nécessite de résoudre `new $class` en instance, déjà fait) plutôt que `getColumnListing()`.
+- [ ] Vérifier et renommer, côté tri (EX-313), tout paramètre/clé portant le nom `column_count`/« colonnes » (back et/ou front selon où le tri est implémenté).
+- [ ] Front `frontend/components/ModelList.vue` : libellé de colonne « colonnes » → « propriétés », clé de tri renommée en conséquence.
+- [ ] Traductions FR/EN (`frontend/i18n/locales/{fr,en}.json`) : libellé de colonne et libellé de tri.
+- [ ] Tests Unit (`tests/Unit/ModelRepositoryTest.php`) et Feature (`tests/Feature/ModelListingTest.php`) : adapter les assertions `column_count` → `property_count` ; ajouter un cas de modèle factice sans `$fillable`/cast/relation pour couvrir explicitement l'avertissement de la SFD (compte réduit aux seules colonnes techniques).
+- [ ] Mesurer l'impact perf avant de clore la phase : la logique extraite s'appuie sur `ColumnIntrospector::forTable()` (`getColumns()` + `getForeignKeys()`, 2 requêtes de schéma) contre 1 seule aujourd'hui (`getColumnListing()`) — pour un listing pouvant compter plusieurs dizaines de modèles par connexion (déjà optimisé une fois pour le N+1 de `hasTable()` en Phase 17), ce changement double le nombre de requêtes de schéma par modèle décrit. Vérifier contre l'environnement docker-compose réel ; envisager une mise en cache (même esprit qu'`ItemCountEstimator`, Phase 17) si le surcoût s'avère significatif.
+
+Points ouverts à trancher avant de démarrer :
+- La SFD ne mentionne aucune approximation pour ce compteur (contrairement à `item_count`, EX-312) : le tri EX-313 sur le nombre de propriétés doit donc rester une valeur exacte, à confirmer si un doute survient à l'implémentation.
+
+## Phase 25 — Le listing des items n'affiche que les colonnes exposées (module 4, EX-402 tranché)
+
+Ajoutée à la SFD le 2026-08-13 : EX-402 tranche le point ouvert documenté depuis la Phase 4a (« sélection des colonnes “principales” pour l'aperçu du listing, non tranché ») en faveur de la même règle que la fiche détail (EX-422) — le listing d'items n'affiche que les colonnes exposées par le modèle, et uniquement celles-ci ; une colonne réelle de la table absente de l'allowlist EX-422 n'apparaît jamais, y compris dans le filtre et le tri (déjà cohérent avec EX-432/EX-472, qui ne portent déjà que sur `columnTypesFor()`).
+
+Écart réel identifié en relisant `Support\ItemRepository::paginate()` : contrairement à `find()` (qui filtre déjà via `columnsFor()`, cf. Phase 4d), `paginate()` renvoie la ligne brute complète du query builder (toutes les colonnes réelles de la table), et `frontend/components/ItemList.vue` déduit dynamiquement ses colonnes d'affichage de `Object.keys(props.items[0])` — donc de cette ligne brute. Le commentaire de tête de `ItemRepository` affirme actuellement le contraire (« le listing renvoie la valeur brute de toutes les colonnes exposées ») : à corriger avec le code.
+
+- [ ] `Support\ItemRepository::paginate()` : restreindre les colonnes renvoyées par ligne à l'allowlist `columnsFor()`/`columnTypesFor()` du modèle, tout en conservant les colonnes indispensables au fonctionnement du listing même si elles ne sont pas exposées — clé primaire (`meta.primary_key`, navigation EX-401), colonne de suppression douce (`is_trashed`, EX-439). Ces deux cas sont déjà systématiquement technique/exposées en pratique (clé primaire = colonne technique EX-416, `deleted_at` = colonne technique dès `SoftDeletes` utilisé, cf. Phase 4a point d'attention) : à vérifier qu'aucun cas réel ne les exclurait, plutôt qu'à coder une exception spéciale.
+- [ ] Mettre à jour le commentaire de tête de `ItemRepository` (ligne citant EX-402 comme « point ouvert ») pour refléter la décision prise par la SFD.
+- [ ] Front `ItemList.vue` : le composant continuera de fonctionner sans changement (il déduit déjà ses colonnes de la réponse API) — vérifier néanmoins le commentaire existant (« potentiellement plus large que le schéma exposé par `/columns` ») qui devient obsolète une fois la restriction appliquée côté API.
+- [ ] Tests Feature (`tests/Feature/ItemListingTest.php`) : ajouter un cas avec une colonne réelle de la table absente de `$fillable`/cast/technique/relation, vérifiant son absence du listing (même esprit que `test_columns_omits_a_column_unknown_to_the_host_models_code`, Phase 4d, mais sur `paginate()` plutôt que `columnsFor()`/`find()`) ; vérifier aussi que le filtre/tri sur une telle colonne renvoie toujours 422 (déjà couvert, à confirmer non régressé).
+- [ ] Tests Unit (`tests/Unit/ItemRepositoryTest.php`) : cas équivalent au niveau repository.
+- [ ] Vérifier `RelationRepository::paginateRelated()` (Phase 23) : construit sur le même schéma de retour que `paginate()` (ligne brute de la table liée) — à confirmer si EX-402/EX-427 (« même logique d'aperçu ») impose la même restriction pour les tableaux d'objets liés, ou si c'est hors périmètre de cette phase (à clarifier avec la SFD si ambigu à l'implémentation).
+- [ ] Build front republié (`resources/dist/modelbase/`), conformément à CLAUDE.md, si `ItemList.vue`/`RelationTable.vue` sont finalement touchés.
+
+## Phase 26 — Correspondance cast Eloquent → type de rendu (module 4, EX-422 mis à jour, EX-474 nouvelle)
+
+Ajoutée à la SFD le 2026-08-13. EX-422 est complétée : le type de rendu (EX-407) d'une colonne est désormais déduit en priorité du cast Eloquent déclaré sur la colonne (`Model::getCasts()`), et seulement à défaut du schéma de la base de données (comportement actuel, inchangé, de `ColumnIntrospector::scalarType()`). La nouvelle exigence EX-474 fixe la table de correspondance cast → type :
+
+| Cast Eloquent | Type de rendu |
+|---|---|
+| `boolean`, `bool` | booléen |
+| `integer`, `int`, `real`, `float`, `double`, `decimal:*` | nombre |
+| `date`, `datetime`, `immutable_date`, `immutable_datetime`, `custom_datetime:*`, `timestamp` | date |
+| `array`, `json`, `collection`, `object`, `encrypted:array`, `encrypted:json`, `encrypted:collection`, `encrypted:object` | JSON |
+| `string`, `encrypted` | texte |
+
+Trois règles de repli accompagnent la table, à respecter dans l'implémentation :
+1. Une colonne détectée comme clé étrangère (EX-423) conserve le rendu FK quel que soit un cast scalaire déclaré dessus (ex. `integer` sur une colonne `*_id`) — la FK est prioritaire sur EX-474, pas l'inverse.
+2. Un cast non couvert par la table (classe personnalisée `CastsAttributes`, cast d'énumération, `AsCollection` et assimilés, ou toute valeur non reconnue) laisse le type déduit du schéma de la base, comme une colonne sans cast — pas d'erreur, pas de type par défaut arbitraire.
+3. Le caractère « texte long » (`long`, EX-450/EX-463, SQL `text`/`mediumtext`/`longtext`) reste dans tous les cas déduit du schéma, quel que soit le cast — aucun cast Eloquent ne porte cette information.
+
+Aucune des méthodes actuelles ne lit `getCasts()` pour déterminer le *type* (seulement pour décider si une colonne est *exposée*, EX-422 existant) : écart réel, pas une clarification sans effet.
+
+- [ ] `Support\ColumnIntrospector` (ou `ItemRepository::columnsFor()`, à trancher à l'implémentation selon où vit déjà la connaissance du cast) : nouvelle table de correspondance cast → `ColumnType` (EX-474), y compris la normalisation des variantes paramétrées (`decimal:2`, `custom_datetime:Y-m-d`, `encrypted:array`, etc. — préfixe avant `:`).
+- [ ] Appliquer la priorité : FK (EX-423, déjà calculée par `relationForeignKeys()`/`foreignKeyFor()`) > cast reconnu (EX-474) > type déduit du schéma (`scalarType()`, comportement actuel inchangé en dernier recours) — dans `columnsFor()`, au moment où le type de chaque colonne exposée est déterminé.
+- [ ] Ne jamais modifier le flag `long` (texte long, EX-450) sur la base d'un cast — rester sur `isLongText()` (schéma) quel que soit le résultat ci-dessus.
+- [ ] Tests Unit (`tests/Unit/ColumnIntrospectorTest.php` et/ou `ItemRepositoryTest.php`) : un cas par famille de cast de la table EX-474, un cas de cast personnalisé/non reconnu (repli schéma), un cas de colonne FK avec cast scalaire déclaré (repli FK), un cas de colonne texte long castée en `string` (flag `long` inchangé).
+- [ ] Tests Feature (`tests/Feature/ItemListingTest.php`/`ItemMutationTest.php`) : vérifier le rendu de bout en bout (type renvoyé par `/items`, `/items/{id}`, `/columns`) pour au moins un cast de chaque famille sur un modèle de démo ou factice.
+- [ ] Vérifier manuellement contre l'environnement docker-compose réel (mysql/pgsql) qu'une colonne physiquement `varchar`/`text` mais castée `array`/`json` côté modèle hôte (pattern courant pour stocker du JSON sur un moteur sans type JSON natif) est bien rendue comme JSON côté front — cas que le schéma seul ne peut pas détecter, raison d'être principale d'EX-474.
+
+Points ouverts à trancher avant de démarrer :
+- La SFD ne précise pas le comportement si le cast déclaré et le schéma de la base s'accordent déjà (cas le plus fréquent, ex. colonne `boolean` castée `boolean`) — sans impact observable, mais à garder en tête pour ne pas sur-complexifier l'implémentation d'un cas qui ne change rien en pratique.
