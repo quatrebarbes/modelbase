@@ -173,7 +173,7 @@ class ItemRepository
         $db = $instance->getConnection();
         $table = $instance->getTable();
         $key = $instance->getKeyName();
-        $technical = $this->technicalColumns($instance);
+        $technical = $this->columns->technicalColumns($instance);
         $deletedAtColumn = $this->deletedAtColumn($instance);
 
         if (! $db->getSchemaBuilder()->hasTable($table)) {
@@ -284,7 +284,7 @@ class ItemRepository
     {
         $class = $this->resolver->resolve($connection, $model);
         $instance = new $class;
-        $technical = $this->technicalColumns($instance);
+        $technical = $this->columns->technicalColumns($instance);
 
         if (! $instance->getConnection()->getSchemaBuilder()->hasTable($instance->getTable())) {
             return [];
@@ -446,16 +446,16 @@ class ItemRepository
      * EX-422 : restreint les colonnes exposées à celles réellement connues du
      * code du modèle hôte — `$fillable`, attributs castés (`$casts`/
      * `casts()`), colonnes techniques (clé primaire, timestamps, déjà gérées
-     * par `technicalColumns()`) et clés étrangères déclarées via une relation
-     * Eloquent (EX-423, ci-dessous) — le schéma de la base ne fournissant
-     * plus que le type de chacune (`ColumnIntrospector::forTable()`, resté
-     * inchangé). Une colonne de la table absente de ces quatre sources
-     * (jamais fillable, jamais castée, ni technique, ni clé étrangère
-     * déclarée) disparaît donc entièrement du listing/de la fiche détail/du
-     * formulaire, plutôt que d'être seulement affichée en lecture seule
-     * (EX-464/EX-416) : lecture assumée d'EX-422 après clarification, la
-     * tension avec EX-401/EX-406 (« toutes les colonnes ») étant résolue en
-     * faveur de la fidélité au code hôte.
+     * par `ColumnIntrospector::technicalColumns()`) et clés étrangères
+     * déclarées via une relation Eloquent (EX-423, ci-dessous) — le schéma de
+     * la base ne fournissant plus que le type de chacune
+     * (`ColumnIntrospector::forTable()`, resté inchangé). Une colonne de la
+     * table absente de ces quatre sources (jamais fillable, jamais castée, ni
+     * technique, ni clé étrangère déclarée) disparaît donc entièrement du
+     * listing/de la fiche détail/du formulaire, plutôt que d'être seulement
+     * affichée en lecture seule (EX-464/EX-416) : lecture assumée d'EX-422
+     * après clarification, la tension avec EX-401/EX-406 (« toutes les
+     * colonnes ») étant résolue en faveur de la fidélité au code hôte.
      *
      * EX-423 : une clé étrangère déclarée via une relation Eloquent
      * (`belongsTo`) prévaut sur la seule contrainte FK de la base — prise en
@@ -467,35 +467,16 @@ class ItemRepository
      * Public (EX-472) : réutilisée telle quelle par `RelationRepository::
      * paginateRelated()` pour calculer l'allowlist de colonnes filtrables/
      * triables du modèle lié d'une relation, sans dupliquer cette logique.
+     * Logique déplacée dans `ColumnIntrospector::exposedColumns()` en
+     * Phase 24, pour être réutilisée telle quelle par `Support\ModelRepository`
+     * (nombre de propriétés du listing des modèles, EX-302/EX-313, module 3) —
+     * cette méthode n'est plus qu'une délégation.
      *
      * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>
      */
     public function columnsFor(string $connection, Model $instance): array
     {
-        $relations = $this->columns->relationForeignKeys($instance);
-        $exposed = array_unique(array_merge(
-            $instance->getFillable(),
-            array_keys($instance->getCasts()),
-            $this->technicalColumns($instance),
-            array_keys($relations),
-        ));
-
-        return collect($this->columns->forTable($connection, $instance->getTable()))
-            ->filter(fn (array $column) => in_array($column['name'], $exposed, true))
-            ->map(function (array $column) use ($relations) {
-                if (! isset($relations[$column['name']])) {
-                    return $column;
-                }
-
-                return [
-                    ...$column,
-                    'type' => ColumnType::FOREIGN_KEY->value,
-                    'is_foreign_key' => true,
-                    'foreign_key' => $relations[$column['name']],
-                ];
-            })
-            ->values()
-            ->all();
+        return $this->columns->exposedColumns($connection, $instance);
     }
 
     /**
@@ -533,7 +514,7 @@ class ItemRepository
     private function writable(array $values, Model $instance, array $columnDefinitions): array
     {
         $known = collect($columnDefinitions)->pluck('name')->all();
-        $technical = $this->technicalColumns($instance);
+        $technical = $this->columns->technicalColumns($instance);
         $jsonColumns = collect($columnDefinitions)
             ->where('type', ColumnType::JSON->value)
             ->pluck('name')
@@ -587,27 +568,6 @@ class ItemRepository
         }
 
         return null;
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function technicalColumns(Model $instance): array
-    {
-        $technical = [$instance->getKeyName()];
-
-        if ($instance->usesTimestamps()) {
-            $technical[] = $instance->getCreatedAtColumn();
-            $technical[] = $instance->getUpdatedAtColumn();
-        }
-
-        $deletedAtColumn = $this->deletedAtColumn($instance);
-
-        if ($deletedAtColumn !== null) {
-            $technical[] = $deletedAtColumn;
-        }
-
-        return $technical;
     }
 
     /**

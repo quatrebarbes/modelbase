@@ -8,11 +8,14 @@ use Illuminate\Support\Facades\DB;
 /**
  * Assemble le listing des modèles Eloquent déclarés par l'application hôte
  * pour une connexion donnée (EX-301), avec nom, nombre d'items (EX-302,
- * approché pour une grande table, EX-312) et nombre de colonnes de la table
- * associée, filtrable par nom ou par nom de table (EX-304). Deux classes
- * Eloquent déclarées pointant vers la même table donnent deux entrées
- * distinctes : le listing est construit par classe, jamais dédupliqué par
- * table.
+ * approché pour une grande table, EX-312) et nombre de propriétés réellement
+ * exposées par le modèle (EX-302/EX-313 : `$fillable` ∪ attributs castés ∪
+ * colonnes techniques ∪ clés étrangères de relation déclarée — même allowlist
+ * qu'`ItemRepository::columnsFor()` pour le module 4, EX-422, cf.
+ * `ColumnIntrospector::exposedColumnNames()`), filtrable par nom ou par nom de
+ * table (EX-304). Deux classes Eloquent déclarées pointant vers la même table
+ * donnent deux entrées distinctes : le listing est construit par classe,
+ * jamais dédupliqué par table.
  *
  * `table_exists` signale au front qu'un modèle référence une table absente
  * de la base, pour qu'il l'affiche comme non navigable plutôt que comme une
@@ -31,11 +34,12 @@ class ModelRepository
     public function __construct(
         private EloquentModelFinder $models,
         private ItemCountEstimator $itemCounts,
+        private ColumnIntrospector $columns,
     ) {
     }
 
     /**
-     * @return array<int, array{name: string, table: string, table_exists: bool, item_count: string, item_count_raw: int, column_count: int}>
+     * @return array<int, array{name: string, table: string, table_exists: bool, item_count: string, item_count_raw: int, property_count: int}>
      */
     public function forConnection(string $connection, ?string $search = null): array
     {
@@ -71,13 +75,18 @@ class ModelRepository
     /**
      * @param  class-string<\Illuminate\Database\Eloquent\Model>  $class
      * @param  array<string, true>  $existingTables
-     * @return array{name: string, table: string, table_exists: bool, item_count: string, item_count_raw: int, column_count: int}
+     * @return array{name: string, table: string, table_exists: bool, item_count: string, item_count_raw: int, property_count: int}
      */
     private function describe(string $class, array $existingTables): array
     {
         $instance = new $class;
         $table = $instance->getTable();
         $connection = $instance->getConnection();
+        // Même nom de connexion que celui utilisé par EloquentModelFinder pour
+        // filtrer les modèles de cette connexion (cf. classForTable()) —
+        // nécessaire pour ColumnIntrospector::exposedColumnNames(), qui
+        // interroge le schéma via Schema::connection($name).
+        $connectionName = $instance->getConnectionName() ?? config('database.default');
 
         // Un modèle Eloquent déclaré peut ne correspondre à aucune table
         // réelle (ex. table pas encore migrée en prod) : on l'affiche quand
@@ -93,7 +102,7 @@ class ModelRepository
                 'table_exists' => false,
                 'item_count' => ApproximateCount::format(0),
                 'item_count_raw' => 0,
-                'column_count' => 0,
+                'property_count' => 0,
             ];
         }
 
@@ -108,7 +117,11 @@ class ModelRepository
             // (ex. "1.2K") ne s'ordonne pas correctement lexicographiquement.
             'item_count' => ApproximateCount::format($itemCount),
             'item_count_raw' => $itemCount,
-            'column_count' => count($connection->getSchemaBuilder()->getColumnListing($table)),
+            // EX-302/EX-313 : nombre de propriétés réellement exposées par le
+            // modèle (allowlist EX-422), pas le nombre brut de colonnes de la
+            // table — un modèle sans $fillable/cast/relation belongsTo ne
+            // compte donc que ses colonnes techniques (avertissement SFD).
+            'property_count' => count($this->columns->exposedColumnNames($connectionName, $instance)),
         ];
     }
 

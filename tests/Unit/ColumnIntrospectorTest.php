@@ -110,6 +110,89 @@ class ColumnIntrospectorTest extends TestCase
     }
 
     /**
+     * EX-302/EX-313/EX-422 : clé primaire, timestamps et colonne de
+     * suppression douce (SoftDeletes) sont toutes trois considérées comme
+     * techniques, indépendamment de leur présence réelle dans le schéma de la
+     * table (cette méthode ne lit que la configuration du modèle, pas le
+     * schéma) — même comportement que l'ancienne `ItemRepository::
+     * technicalColumns()` avant son extraction en Phase 24.
+     */
+    public function test_technical_columns_includes_primary_key_timestamps_and_soft_deletes_column(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            use SoftDeletes;
+
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+        };
+
+        $technical = (new ColumnIntrospector)->technicalColumns($instance);
+
+        $this->assertEqualsCanonicalizing(['id', 'created_at', 'updated_at', 'deleted_at'], $technical);
+    }
+
+    /**
+     * EX-302/EX-313/EX-422 : allowlist des propriétés exposées par un modèle
+     * — union de `$fillable`, des attributs castés, des colonnes techniques
+     * et des clés étrangères déclarées via une relation Eloquent, sans
+     * doublon, restreinte aux colonnes réellement présentes dans le schéma de
+     * la table. Une colonne réelle de la table absente des quatre sources
+     * (`price`/`metadata`/`published_at`/`description` ici) n'apparaît pas.
+     */
+    public function test_exposed_column_names_merges_fillable_casts_technical_and_relation_foreign_keys(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name'];
+
+            protected $casts = ['active' => 'boolean'];
+
+            public function category(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+            {
+                return $this->belongsTo(ColumnIntrospectorTestCategory::class);
+            }
+        };
+
+        $exposed = (new ColumnIntrospector)->exposedColumnNames('primary', $instance);
+
+        $this->assertEqualsCanonicalizing(['name', 'active', 'id', 'category_id'], $exposed);
+    }
+
+    /**
+     * EX-302 : un nom déclaré `$fillable` qui ne correspond à aucune colonne
+     * réelle de la table (typo, attribut virtuel) ne doit jamais être compté
+     * — `exposedColumnNames()` restreint toujours l'allowlist aux colonnes
+     * réellement présentes dans le schéma (`forTable()`), contrairement à un
+     * simple `array_unique(array_merge(...))` sur les seules déclarations du
+     * modèle.
+     */
+    public function test_exposed_column_names_ignores_a_fillable_entry_without_a_real_column(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name', 'does_not_exist'];
+        };
+
+        $exposed = (new ColumnIntrospector)->exposedColumnNames('primary', $instance);
+
+        $this->assertEqualsCanonicalizing(['name', 'id'], $exposed);
+    }
+
+    /**
      * Une colonne participant à une clé étrangère composite déclarée au
      * niveau du schéma (pas d'une relation Eloquent, cf.
      * test_it_ignores_a_composite_relation_foreign_key ci-dessous) n'est pas

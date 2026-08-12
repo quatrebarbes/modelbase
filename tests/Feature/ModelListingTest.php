@@ -107,20 +107,24 @@ class ModelListingTest extends TestCase
         return $query === [] ? $url : $url.'?'.http_build_query($query);
     }
 
-    public function test_it_lists_models_declared_for_the_connection_with_item_and_column_counts(): void
+    public function test_it_lists_models_declared_for_the_connection_with_item_and_property_counts(): void
     {
         $user = UserFactory::new()->create();
 
         $response = $this->actingAs($user)->getJson($this->endpoint('primary'));
 
         $response->assertOk();
+        // EX-302 : ni Doohickey ni DoohickeyAlias ne déclarent de $fillable
+        // sur 'name' (cf. putModel() ci-dessous) — seules les colonnes
+        // techniques (id/created_at/updated_at) sont donc exposées (3),
+        // contrairement au nombre brut de colonnes de la table (4).
         $response->assertJsonFragment([
             'name' => 'Doohickey',
             'table' => 'widgets',
             'table_exists' => true,
             'item_count' => '2',
             'item_count_raw' => 2,
-            'column_count' => 4,
+            'property_count' => 3,
         ]);
     }
 
@@ -139,7 +143,7 @@ class ModelListingTest extends TestCase
             'table_exists' => false,
             'item_count' => '0',
             'item_count_raw' => 0,
-            'column_count' => 0,
+            'property_count' => 0,
         ]);
     }
 

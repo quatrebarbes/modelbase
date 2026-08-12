@@ -5,6 +5,7 @@ namespace Quatrebarbes\Modelbase\Support;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 use ReflectionMethod;
@@ -126,6 +127,102 @@ class ColumnIntrospector
         }
 
         return $relations;
+    }
+
+    /**
+     * EX-302/EX-313/EX-422 : colonnes techniques d'un modèle (clé primaire,
+     * timestamps, colonne de suppression douce) — communes au calcul des
+     * propriétés exposées par un modèle (`exposedColumnNames()` ci-dessous,
+     * module 3) et à celui des colonnes exposées avec leur type/décoration
+     * (`ItemRepository::columnsFor()`, module 4).
+     *
+     * @return array<int, string>
+     */
+    public function technicalColumns(Model $instance): array
+    {
+        $technical = [$instance->getKeyName()];
+
+        if ($instance->usesTimestamps()) {
+            $technical[] = $instance->getCreatedAtColumn();
+            $technical[] = $instance->getUpdatedAtColumn();
+        }
+
+        if (ModelTraitInspector::uses($instance, SoftDeletes::class)) {
+            $technical[] = $instance->getDeletedAtColumn();
+        }
+
+        return $technical;
+    }
+
+    /**
+     * EX-422 : colonnes réellement exposées par un modèle — restreint les
+     * colonnes réelles de sa table (`forTable()`) à celles appartenant à
+     * l'allowlist `$fillable` ∪ attributs castés (`getCasts()`) ∪ colonnes
+     * techniques ∪ clés étrangères déclarées via une relation Eloquent
+     * (EX-423) — le schéma de la base ne fournissant plus que le type de
+     * chacune. Une colonne de la table absente de ces quatre sources (jamais
+     * fillable, jamais castée, ni technique, ni clé étrangère déclarée)
+     * disparaît donc entièrement, plutôt que d'être seulement affichée en
+     * lecture seule (EX-464/EX-416). Extraite de `ItemRepository::
+     * columnsFor()` (module 4) en Phase 24 pour être réutilisée telle quelle
+     * par `Support\ModelRepository` (nombre de propriétés du listing des
+     * modèles, EX-302/EX-313, module 3) sans dupliquer cette logique.
+     *
+     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>
+     */
+    public function exposedColumns(string $connection, Model $instance): array
+    {
+        $relations = $this->relationForeignKeys($instance);
+        $allowlist = $this->allowlistedColumnNames($instance, $relations);
+
+        return collect($this->forTable($connection, $instance->getTable()))
+            ->filter(fn (array $column) => in_array($column['name'], $allowlist, true))
+            ->map(function (array $column) use ($relations) {
+                if (! isset($relations[$column['name']])) {
+                    return $column;
+                }
+
+                return [
+                    ...$column,
+                    'type' => ColumnType::FOREIGN_KEY->value,
+                    'is_foreign_key' => true,
+                    'foreign_key' => $relations[$column['name']],
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * EX-302/EX-313 (module 3) : ne renvoie que les noms de `exposedColumns()`
+     * ci-dessus — `Support\ModelRepository` n'a besoin que du compte, pas du
+     * détail décoré (type/FK) que renvoie `exposedColumns()`.
+     *
+     * @return array<int, string>
+     */
+    public function exposedColumnNames(string $connection, Model $instance): array
+    {
+        return array_column($this->exposedColumns($connection, $instance), 'name');
+    }
+
+    /**
+     * Allowlist des noms de colonnes qu'un modèle expose, avant intersection
+     * avec les colonnes réellement présentes dans le schéma de sa table (cf.
+     * `exposedColumns()` ci-dessus) — un nom de `$fillable`/cast qui ne
+     * correspondrait à aucune colonne réelle (typo, attribut virtuel) ne doit
+     * jamais être compté ni affiché, d'où cette intersection systématique.
+     *
+     * @param  array<string, array{table: string, column: string}>  $relations
+     * @return array<int, string>
+     */
+    private function allowlistedColumnNames(Model $instance, array $relations): array
+    {
+        return array_unique(array_merge(
+            $instance->getFillable(),
+            array_keys($instance->getCasts()),
+            $this->technicalColumns($instance),
+            array_keys($relations),
+        ));
     }
 
     /**

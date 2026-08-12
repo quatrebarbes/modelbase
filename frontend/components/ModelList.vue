@@ -5,10 +5,10 @@ type ModelSummary = {
   table_exists: boolean
   item_count: string
   item_count_raw: number
-  column_count: number
+  property_count: number
 }
 
-type SortableColumn = 'name' | 'table' | 'item_count_raw' | 'column_count'
+type SortableColumn = 'name' | 'table' | 'item_count_raw' | 'property_count'
 
 const props = defineProps<{
   connection: string
@@ -39,7 +39,7 @@ const columns: { key: SortableColumn; label: string; numeric: boolean }[] = [
   { key: 'name', label: 'columnName', numeric: false },
   { key: 'table', label: 'columnTable', numeric: false },
   { key: 'item_count_raw', label: 'columnItems', numeric: true },
-  { key: 'column_count', label: 'columnColumns', numeric: true },
+  { key: 'property_count', label: 'columnProperties', numeric: true },
 ]
 
 const sortColumn = ref<SortableColumn | null>(null)
@@ -126,7 +126,7 @@ const sortedModels = computed(() => {
         <td>{{ model.name }}</td>
         <td>{{ model.table_exists ? model.table : $t('models.tableMissing') }}</td>
         <td class="model-list__count model-list__count-column">{{ model.item_count }}</td>
-        <td class="model-list__count model-list__count-column">{{ model.column_count }}</td>
+        <td class="model-list__count model-list__count-column">{{ model.property_count }}</td>
       </tr>
     </tbody>
   </table>

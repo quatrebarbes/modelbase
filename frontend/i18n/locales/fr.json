@@ -24,7 +24,7 @@
     "columnName": "Nom",
     "columnTable": "Table",
     "columnItems": "Items",
-    "columnColumns": "Colonnes",
+    "columnProperties": "Propriétés",
     "searchPlaceholder": "Filtrer par nom ou table",
     "tableMissing": "NULL"
   },

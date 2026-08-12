@@ -54,9 +54,13 @@ class ModelRepositoryTest extends TestCase
         parent::tearDown();
     }
 
-    private function putModel(string $class, string $table): void
+    /**
+     * @param  array<int, string>  $fillable
+     */
+    private function putModel(string $class, string $table, array $fillable = []): void
     {
         $namespace = app()->getNamespace();
+        $fillableList = collect($fillable)->map(fn (string $column) => "'{$column}'")->implode(', ');
 
         File::put(app_path("Models/{$class}.php"), <<<PHP
         <?php
@@ -70,13 +74,23 @@ class ModelRepositoryTest extends TestCase
             protected \$connection = 'primary';
 
             protected \$table = '{$table}';
+
+            protected \$fillable = [{$fillableList}];
         }
         PHP);
 
         require_once app_path("Models/{$class}.php");
     }
 
-    public function test_it_describes_each_model_with_table_item_and_column_counts(): void
+    /**
+     * EX-302 : un modèle sans `$fillable`/cast/relation `belongsTo` ne compte
+     * que ses colonnes techniques (clé primaire, timestamps) — 3 pour
+     * `Sprocket` (`id`/`created_at`/`updated_at`), sa colonne `name` n'étant
+     * ni fillable ni castée ni technique, à la différence du nombre brut de
+     * colonnes de la table (4), qui n'est plus l'affichage attendu (EX-313
+     * mise à jour, Phase 24) — avertissement explicite de la SFD.
+     */
+    public function test_it_describes_each_model_with_table_item_and_property_counts(): void
     {
         $repository = app(ModelRepository::class);
 
@@ -85,7 +99,21 @@ class ModelRepositoryTest extends TestCase
         $this->assertSame('widgets', $models['Sprocket']['table']);
         $this->assertSame('1', $models['Sprocket']['item_count']);
         $this->assertSame(1, $models['Sprocket']['item_count_raw']);
-        $this->assertSame(4, $models['Sprocket']['column_count']);
+        $this->assertSame(3, $models['Sprocket']['property_count']);
+    }
+
+    /**
+     * EX-302 : `name` devient une propriété exposée dès qu'elle est déclarée
+     * `$fillable` — le nombre de propriétés rejoint alors le nombre brut de
+     * colonnes de la table (4), contrairement à `Sprocket` ci-dessus.
+     */
+    public function test_property_count_includes_a_fillable_column(): void
+    {
+        $this->putModel('Fillable', 'widgets', ['name']);
+
+        $models = collect(app(ModelRepository::class)->forConnection('primary'))->keyBy('name');
+
+        $this->assertSame(4, $models['Fillable']['property_count']);
     }
 
     public function test_it_filters_by_name_case_insensitively(): void
@@ -125,7 +153,7 @@ class ModelRepositoryTest extends TestCase
         $this->assertFalse($models['Ghost']['table_exists']);
         $this->assertSame('0', $models['Ghost']['item_count']);
         $this->assertSame(0, $models['Ghost']['item_count_raw']);
-        $this->assertSame(0, $models['Ghost']['column_count']);
+        $this->assertSame(0, $models['Ghost']['property_count']);
     }
 
     public function test_a_model_whose_table_exists_reports_table_exists_true(): void
