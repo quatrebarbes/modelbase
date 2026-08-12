@@ -53,6 +53,11 @@ class ItemRelationsTest extends TestCase
             $table->id();
             $table->unsignedBigInteger('category_id')->nullable();
             $table->string('name');
+            // Colonne réelle de la table, volontairement absente du
+            // $fillable d'ItemRelProduct ci-dessous et sans cast déclaré —
+            // sert à vérifier EX-427 (même logique d'aperçu qu'EX-402) au
+            // niveau HTTP.
+            $table->string('internal_note')->nullable();
         });
 
         DB::connection('primary')->table('categories')->insert([
@@ -251,6 +256,23 @@ class ItemRelationsTest extends TestCase
         $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'products', ['per_page' => 1, 'page' => 99]));
         $response->assertOk();
         $response->assertJsonPath('meta.current_page', 2);
+    }
+
+    /**
+     * EX-427 : « même logique d'aperçu que le listing standard » (EX-402) —
+     * `internal_note`, réelle en base mais absente du $fillable d'ItemRelProduct
+     * (cf. setUp()) et sans cast déclaré, ne doit jamais apparaître dans une
+     * ligne d'objet lié.
+     */
+    public function test_it_omits_a_column_not_exposed_by_the_related_model_from_a_relation_row(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->endpoint('ItemRelCategory', '1', 'products'));
+
+        $response->assertOk();
+        $this->assertArrayNotHasKey('internal_note', $response->json('data.0'));
+        $this->assertArrayHasKey('name', $response->json('data.0'));
     }
 
     /**

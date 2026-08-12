@@ -319,6 +319,34 @@ class ItemRepositoryTest extends TestCase
     }
 
     /**
+     * EX-402 : la ligne du listing ne contient que les colonnes exposées par
+     * le modèle (EX-422) — ici `internal_note` pour `RepoProductWithRelation`
+     * (cf. test_columns_omits_a_column_unknown_to_the_host_models_code), une
+     * colonne réellement présente dans la table sous-jacente `products` mais
+     * absente du schéma exposé, ne doit donc jamais apparaître dans la ligne
+     * renvoyée, malgré sa disponibilité technique.
+     */
+    public function test_paginate_omits_a_column_not_exposed_by_columns_for(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoProductWithRelation', 1, 15);
+
+        $this->assertArrayNotHasKey('internal_note', $page['data'][0]);
+        $this->assertArrayHasKey('secondary_category_id', $page['data'][0]);
+    }
+
+    /**
+     * Contraste avec le test ci-dessus : `internal_note` est castée sur
+     * `RepoProduct` (cf. setUp()), donc exposée par columnsFor() malgré son
+     * absence de $fillable — elle doit apparaître dans la ligne du listing.
+     */
+    public function test_paginate_includes_a_casted_non_fillable_column(): void
+    {
+        $page = $this->repository()->paginate('primary', 'RepoProduct', 1, 15);
+
+        $this->assertArrayHasKey('internal_note', $page['data'][0]);
+    }
+
+    /**
      * EX-433 : filtre « contient » insensible à la casse pour une colonne de
      * type texte.
      */

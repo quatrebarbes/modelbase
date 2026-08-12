@@ -49,6 +49,11 @@ class ItemListingTest extends TestCase
             $table->string('name');
             $table->decimal('price');
             $table->json('metadata')->nullable();
+            // Colonne réelle de la table, volontairement absente du
+            // $fillable de ListingProduct ci-dessous et sans cast déclaré —
+            // sert à vérifier EX-402 (listing restreint aux colonnes
+            // exposées par le modèle, EX-422) au niveau HTTP.
+            $table->string('internal_note')->nullable();
             $table->timestamps();
         });
 
@@ -342,6 +347,23 @@ class ItemListingTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonStructure(['message', 'errors' => ['does_not_exist']]);
+    }
+
+    /**
+     * EX-402 : la ligne du listing ne contient que les colonnes exposées par
+     * le modèle (EX-422) — `internal_note`, réelle en base mais absente du
+     * $fillable de ListingProduct (cf. setUp()) et sans cast déclaré, ne doit
+     * jamais apparaître, même techniquement disponible dans la ligne brute.
+     */
+    public function test_it_omits_a_column_not_exposed_by_the_model_from_the_listing_row(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct'));
+
+        $response->assertOk();
+        $this->assertArrayNotHasKey('internal_note', $response->json('data.0'));
+        $this->assertArrayHasKey('metadata', $response->json('data.0'));
     }
 
     public function test_it_returns_an_empty_list_without_error_for_a_model_with_no_items(): void

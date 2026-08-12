@@ -97,8 +97,21 @@ class RelationRepository
         // `$relationQuery` et préservées par toBase().
         $query = $instance->{$relationName}()->toBase();
 
+        // EX-427 : « même logique d'aperçu que le listing standard » (EX-402)
+        // — la ligne renvoyée pour chaque objet lié est restreinte aux
+        // colonnes exposées par le modèle lié, jamais la ligne brute complète
+        // de sa table.
+        $columnDefinitions = $this->items->columnsFor($descriptor['related_connection'], $relation['related']);
+        $columnNames = collect($columnDefinitions)->pluck('name')->all();
+
+        if ($columnNames !== []) {
+            $query->select($columnNames);
+        }
+
         if ($filters !== [] || ($sort !== null && $sort !== '')) {
-            $columnTypes = $this->items->columnTypesFor($descriptor['related_connection'], $relation['related']);
+            $columnTypes = collect($columnDefinitions)
+                ->mapWithKeys(fn (array $column) => [$column['name'] => ColumnType::from($column['type'])])
+                ->all();
 
             if ($filters !== []) {
                 $this->queryFilter->applyFilters($query, $filters, $columnTypes);

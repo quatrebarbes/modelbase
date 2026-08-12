@@ -149,6 +149,8 @@ body {
 
 .data-table__filter-input {
   width: 100%;
+  /* EX-475 : reste lisible même dans une colonne très étroite */
+  min-width: 4rem;
   box-sizing: border-box;
   padding: 0.25rem 0.6rem;
   border: 1px solid var(--color-border);

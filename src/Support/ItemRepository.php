@@ -12,10 +12,11 @@ use Throwable;
 /**
  * Listing paginé (EX-401, EX-403), détail décoré par type de colonne (EX-405
  * à EX-410), schéma des colonnes (EX-412/EX-414/EX-415/EX-416/EX-421/EX-422/
- * EX-423) et écriture (EX-412/EX-413/EX-417) des items d'un modèle. EX-402
- * (colonnes « principales » du listing) est un point ouvert non tranché (cf.
- * docs/roadmap.md, Phase 6) : en attendant, le listing renvoie la valeur
- * brute de toutes les colonnes exposées (cf. `columnsFor()`, EX-422).
+ * EX-423) et écriture (EX-412/EX-413/EX-417) des items d'un modèle. EX-402 :
+ * `paginate()` restreint désormais la ligne renvoyée aux seules colonnes
+ * exposées par le modèle (`columnsFor()`, EX-422) via une clause `select`
+ * explicite, plutôt que la ligne brute complète de la table (`select('*')`
+ * implicite du query builder jusqu'en Phase 24).
  *
  * Écriture (create/update/delete) via une instance Eloquent réelle du modèle
  * hôte (fill()/save()/delete()) plutôt que le query builder brut utilisé
@@ -87,10 +88,25 @@ class ItemRepository
             })->toBase()
             : $db->table($table);
 
+        // EX-402 : la ligne renvoyée par le listing est restreinte aux
+        // colonnes exposées par le modèle (EX-422 — celles-ci incluent déjà
+        // les colonnes techniques : clé primaire, timestamps, colonne de
+        // suppression douce, nécessaires respectivement à la navigation vers
+        // la fiche détail et au calcul d'`is_trashed` ci-dessous), jamais la
+        // ligne brute complète de la table.
+        $columnDefinitions = $this->columnsFor($connection, $instance);
+        $columnNames = collect($columnDefinitions)->pluck('name')->all();
+
+        if ($columnNames !== []) {
+            $query->select($columnNames);
+        }
+
         if ($filters !== [] || ($sort !== null && $sort !== '')) {
             // EX-432 : colonnes de filtre/tri restreintes à celles exposées
             // par columnsFor() (EX-422), jamais un nom de colonne brut.
-            $columnTypes = $this->columnTypesFor($connection, $instance);
+            $columnTypes = collect($columnDefinitions)
+                ->mapWithKeys(fn (array $column) => [$column['name'] => ColumnType::from($column['type'])])
+                ->all();
 
             if ($filters !== []) {
                 $this->queryFilter->applyFilters($query, $filters, $columnTypes);

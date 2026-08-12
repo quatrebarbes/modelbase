@@ -58,6 +58,12 @@ class RelationRepositoryTest extends TestCase
             $table->id();
             $table->unsignedBigInteger('category_id')->nullable();
             $table->string('name');
+            // Colonne réelle de la table, volontairement absente du
+            // $fillable de RepoProductWithRelations (cf. putProductWithRelations())
+            // et sans cast déclaré — sert à vérifier EX-427 (même logique
+            // d'aperçu qu'EX-402 : un tableau d'objets liés ne renvoie que les
+            // colonnes exposées par le modèle lié).
+            $table->string('internal_note')->nullable();
         });
 
         DB::connection('primary')->table('categories')->insert(['id' => 1, 'name' => 'Tools']);
@@ -297,6 +303,20 @@ class RelationRepositoryTest extends TestCase
         $page = $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'siblings', 1, 15);
 
         $this->assertSame('id', $page['meta']['primary_key']);
+    }
+
+    /**
+     * EX-427 : « même logique d'aperçu que le listing standard » (EX-402) —
+     * `internal_note`, réelle en base mais absente du $fillable de
+     * RepoProductWithRelations (cf. setUp()) et sans cast déclaré, ne doit
+     * jamais apparaître dans une ligne d'objet lié.
+     */
+    public function test_paginate_related_omits_a_column_not_exposed_by_the_related_model(): void
+    {
+        $page = $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'siblings', 1, 15);
+
+        $this->assertArrayNotHasKey('internal_note', $page['data'][0]);
+        $this->assertArrayHasKey('name', $page['data'][0]);
     }
 
     /**
