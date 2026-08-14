@@ -73,11 +73,10 @@ const { data, pending } = await useAsyncData(
 
 const rows = computed<Array<Record<string, unknown>>>(() => data.value?.data ?? [])
 const meta = computed(() => data.value?.meta)
-// EX-427 : les en-têtes suivent les données réelles quand il y en a (même
-// principe qu'ItemList.vue), et ne se rabattent sur le schéma que pour un
-// tableau vide (sinon aucun en-tête n'apparaîtrait pour construire les
-// filtres).
-const rowColumns = computed(() => (rows.value.length ? Object.keys(rows.value[0]) : columns.value.map((c) => c.column)))
+// EX-427/EX-476 : l'ordre des en-têtes suit toujours le schéma exposé par
+// /columns du modèle lié (même principe qu'ItemList.vue), jamais les clés de
+// la ligne renvoyée par le listing.
+const rowColumns = computed(() => columns.value.map((c) => c.column))
 
 // EX-428 : la colonne de clé primaire du modèle lié n'est pas forcément
 // nommée `id` (cf. `meta.primary_key`, ItemRepository::paginate()).

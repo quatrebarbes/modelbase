@@ -26,16 +26,13 @@ const filters = defineModel<Record<string, string>>('filters', { default: () => 
 // EX-435/EX-436 : liste "colonne,-colonne2", l'ordre étant la priorité de tri.
 const sort = defineModel<string>('sort', { default: '' })
 
-// EX-402 (point ouvert) : le listing renvoie toutes les colonnes brutes de la
-// ligne, potentiellement plus large que le schéma exposé par /columns — les
-// en-têtes suivent donc les données réelles quand il y en a, et ne se
-// rabattent sur le schéma que pour un listing vide (sinon aucun en-tête
-// n'apparaîtrait pour construire les filtres). EX-439 : `is_trashed` est un
-// indicateur dédié (rendu à part, cf. tbody ci-dessous), pas une colonne du
-// modèle hôte.
-const rowColumns = computed(() => (
-  props.items.length ? Object.keys(props.items[0]).filter((c) => c !== 'is_trashed') : props.columns.map((c) => c.column)
-))
+// EX-476 : l'ordre des en-têtes suit toujours le schéma exposé par /columns
+// (EX-422), jamais les clés de la ligne renvoyée par le listing — sinon deux
+// pages d'un même listing pourraient présenter leurs colonnes dans un ordre
+// différent. `is_trashed` (EX-439) n'apparaît donc pas ici : ce n'est pas une
+// colonne du modèle hôte, mais un indicateur dédié (rendu à part, cf. tbody
+// ci-dessous).
+const rowColumns = computed(() => props.columns.map((c) => c.column))
 
 const columnTypeByName = computed(() => Object.fromEntries(props.columns.map((c) => [c.column, c.type])))
 
