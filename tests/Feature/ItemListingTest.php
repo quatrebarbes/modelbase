@@ -82,9 +82,41 @@ class ItemListingTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        // EX-474 : colonnes physiquement varchar (le schéma seul les
+        // déduirait toutes en ColumnType::STRING) mais castées côté modèle
+        // hôte — une par famille de la table de correspondance cast → type,
+        // pour vérifier de bout en bout (`/columns`, `/items/{id}`) que le
+        // cast Eloquent prime bien sur le type déduit du schéma.
+        Schema::connection('primary')->create('castables', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('category_id')->nullable()->constrained('categories');
+            $table->string('flag')->nullable();
+            $table->string('amount')->nullable();
+            $table->string('happened_at')->nullable();
+            $table->string('payload')->nullable();
+        });
+
+        DB::connection('primary')->table('castables')->insert([
+            'category_id' => 1,
+            'flag' => '1',
+            'amount' => '12.50',
+            'happened_at' => '2026-01-01 10:00:00',
+            'payload' => json_encode(['a' => 1]),
+        ]);
+
         $this->putModel('ListingCategory', 'categories', ['name']);
         $this->putModel('ListingProduct', 'products', ['category_id', 'name', 'price', 'metadata']);
         $this->putModel('ListingBlank', 'empties', ['name']);
+        $this->putModel('ListingCastable', 'castables', ['category_id', 'flag', 'amount', 'happened_at', 'payload'], [
+            // `category_id` : cast scalaire délibérément en conflit avec la
+            // clé étrangère (EX-423) — doit rester `foreign_key` (règle de
+            // repli n°1 d'EX-474), pas `number`.
+            'category_id' => 'integer',
+            'flag' => 'boolean',
+            'amount' => 'decimal:2',
+            'happened_at' => 'datetime',
+            'payload' => 'array',
+        ]);
     }
 
     protected function tearDown(): void
@@ -100,11 +132,13 @@ class ItemListingTest extends TestCase
 
     /**
      * @param  array<int, string>  $fillable
+     * @param  array<string, string>  $casts
      */
-    private function putModel(string $class, string $table, array $fillable): void
+    private function putModel(string $class, string $table, array $fillable, array $casts = []): void
     {
         $namespace = app()->getNamespace();
         $fillableList = collect($fillable)->map(fn (string $column) => "'{$column}'")->implode(', ');
+        $castsList = collect($casts)->map(fn (string $cast, string $column) => "'{$column}' => '{$cast}'")->implode(', ');
 
         File::put(app_path("Models/{$class}.php"), <<<PHP
         <?php
@@ -120,6 +154,8 @@ class ItemListingTest extends TestCase
             protected \$table = '{$table}';
 
             protected \$fillable = [{$fillableList}];
+
+            protected \$casts = [{$castsList}];
         }
         PHP);
 
@@ -399,6 +435,59 @@ class ItemListingTest extends TestCase
         $this->assertSame('number', $values['price']['type']);
         $this->assertSame('json', $values['metadata']['type']);
         $this->assertSame('foreign_key', $values['category_id']['type']);
+    }
+
+    /**
+     * EX-474 : de bout en bout (`/columns` et `/items/{id}`), le type de
+     * rendu de chaque colonne suit le cast Eloquent déclaré plutôt que le
+     * type déduit du schéma — les cinq colonnes de `castables` sont toutes
+     * physiquement `varchar` (cf. setUp()), le schéma seul les déduirait donc
+     * toutes en `string`. `category_id` vérifie en plus la règle de repli
+     * n°1 (FK prioritaire sur un cast scalaire en conflit).
+     */
+    public function test_columns_endpoint_follows_the_cast_to_render_type_mapping(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->columnsUrl('ListingCastable'));
+
+        $response->assertOk();
+        $columns = collect($response->json('data'))->keyBy('column');
+
+        $this->assertSame('foreign_key', $columns['category_id']['type']);
+        $this->assertSame('boolean', $columns['flag']['type']);
+        $this->assertSame('number', $columns['amount']['type']);
+        $this->assertSame('date', $columns['happened_at']['type']);
+        $this->assertSame('json', $columns['payload']['type']);
+    }
+
+    /**
+     * EX-474 : même vérification que ci-dessus au niveau de la fiche détail
+     * d'un item (`values[].type`), qui partage `columnsFor()` avec `/columns`
+     * mais emprunte un chemin de code distinct (`decorate()`).
+     */
+    public function test_item_detail_follows_the_cast_to_render_type_mapping(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->showUrl('ListingCastable', '1'));
+
+        $response->assertOk();
+        $values = collect($response->json('data.values'))->keyBy('column');
+
+        $this->assertSame('foreign_key', $values['category_id']['type']);
+        $this->assertSame('boolean', $values['flag']['type']);
+        $this->assertSame('number', $values['amount']['type']);
+        $this->assertSame('date', $values['happened_at']['type']);
+        $this->assertSame('json', $values['payload']['type']);
+    }
+
+    private function columnsUrl(string $model): string
+    {
+        return route('modelbase.api.connections.models.columns.index', [
+            'connection' => 'primary',
+            'model' => $model,
+        ]);
     }
 
     public function test_a_valid_foreign_key_resolves_to_its_referenced_model_as_navigable(): void

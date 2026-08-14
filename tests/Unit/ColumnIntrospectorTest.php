@@ -302,6 +302,149 @@ class ColumnIntrospectorTest extends TestCase
     }
 
     /**
+     * EX-474 : le type de rendu d'une colonne castée suit en priorité la
+     * correspondance cast Eloquent → type plutôt que le type déduit du
+     * schéma — ici une colonne `name` (schéma STRING) castée `array` doit
+     * être rendue comme JSON.
+     */
+    public function test_a_recognized_cast_overrides_the_schema_deduced_type(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name'];
+
+            protected $casts = ['name' => 'array'];
+        };
+
+        $columns = collect((new ColumnIntrospector)->exposedColumns('primary', $instance))->keyBy('name');
+
+        $this->assertSame(ColumnType::JSON->value, $columns['name']['type']);
+    }
+
+    /**
+     * EX-474 : la correspondance cast → type couvre les variantes paramétrées
+     * (`decimal:2`, `encrypted:array`) et les alias (`bool`) au même titre que
+     * les valeurs canoniques.
+     */
+    public function test_the_cast_type_mapping_covers_parameterized_and_aliased_casts(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name', 'price', 'active', 'metadata'];
+
+            protected $casts = [
+                'price' => 'decimal:2',
+                'active' => 'bool',
+                'metadata' => 'encrypted:array',
+            ];
+        };
+
+        $columns = collect((new ColumnIntrospector)->exposedColumns('primary', $instance))->keyBy('name');
+
+        $this->assertSame(ColumnType::NUMBER->value, $columns['price']['type']);
+        $this->assertSame(ColumnType::BOOLEAN->value, $columns['active']['type']);
+        $this->assertSame(ColumnType::JSON->value, $columns['metadata']['type']);
+    }
+
+    /**
+     * EX-474 : un cast non couvert par la correspondance (classe de cast
+     * personnalisée, énumération, `AsCollection` et assimilés, ou toute
+     * valeur non reconnue) ne modifie pas le type déduit du schéma — ici
+     * `price` (schéma NUMBER) reste NUMBER malgré un cast bidon non reconnu.
+     */
+    public function test_an_unrecognized_cast_falls_back_to_the_schema_deduced_type(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name', 'price'];
+
+            protected $casts = ['name' => \Illuminate\Database\Eloquent\Casts\AsCollection::class];
+        };
+
+        $columns = collect((new ColumnIntrospector)->exposedColumns('primary', $instance))->keyBy('name');
+
+        $this->assertSame(ColumnType::STRING->value, $columns['name']['type']);
+        $this->assertSame(ColumnType::NUMBER->value, $columns['price']['type']);
+    }
+
+    /**
+     * EX-474 : une colonne détectée comme clé étrangère (ici via une relation
+     * Eloquent, EX-423) conserve ce rendu quel que soit un cast scalaire
+     * éventuellement déclaré dessus (ex. cast `integer` sur `category_id`).
+     */
+    public function test_a_foreign_key_column_keeps_its_type_despite_a_scalar_cast(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name'];
+
+            protected $casts = ['category_id' => 'integer'];
+
+            public function category(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+            {
+                return $this->belongsTo(ColumnIntrospectorTestCategory::class);
+            }
+        };
+
+        $columns = collect((new ColumnIntrospector)->exposedColumns('primary', $instance))->keyBy('name');
+
+        $this->assertSame(ColumnType::FOREIGN_KEY->value, $columns['category_id']['type']);
+        $this->assertTrue($columns['category_id']['is_foreign_key']);
+    }
+
+    /**
+     * EX-474 : le caractère « texte long » (EX-450/EX-463) reste déduit du
+     * schéma de la base quel que soit le cast déclaré — aucun cast Eloquent
+     * ne porte cette information — même lorsque ce même cast fait par
+     * ailleurs suivre le type de rendu (ici `description`, schéma `text`,
+     * castée `array`).
+     */
+    public function test_the_long_text_flag_is_unaffected_by_a_cast(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['description'];
+
+            protected $casts = ['description' => 'array'];
+        };
+
+        $columns = collect((new ColumnIntrospector)->exposedColumns('primary', $instance))->keyBy('name');
+
+        $this->assertTrue($columns['description']['long']);
+        $this->assertSame(ColumnType::JSON->value, $columns['description']['type']);
+    }
+
+    /**
      * Régression (incident Phase 12, docs/roadmap.md) : le trait `SoftDeletes`
      * ajoute des méthodes publiques sans paramètre absentes de `Model`
      * (`forceDeleteQuietly`/`restoreQuietly`), donc non couvertes par la seule

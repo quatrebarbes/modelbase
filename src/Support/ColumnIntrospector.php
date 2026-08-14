@@ -174,23 +174,80 @@ class ColumnIntrospector
     {
         $relations = $this->relationForeignKeys($instance);
         $allowlist = $this->allowlistedColumnNames($instance, $relations);
+        $casts = $instance->getCasts();
 
         return collect($this->forTable($connection, $instance->getTable()))
             ->filter(fn (array $column) => in_array($column['name'], $allowlist, true))
-            ->map(function (array $column) use ($relations) {
-                if (! isset($relations[$column['name']])) {
-                    return $column;
+            ->map(function (array $column) use ($relations, $casts) {
+                if (isset($relations[$column['name']])) {
+                    return [
+                        ...$column,
+                        'type' => ColumnType::FOREIGN_KEY->value,
+                        'is_foreign_key' => true,
+                        'foreign_key' => $relations[$column['name']],
+                    ];
                 }
 
-                return [
-                    ...$column,
-                    'type' => ColumnType::FOREIGN_KEY->value,
-                    'is_foreign_key' => true,
-                    'foreign_key' => $relations[$column['name']],
-                ];
+                return $this->applyCastType($column, $casts[$column['name']] ?? null);
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * EX-474 : le type de rendu (EX-407) d'une colonne castée suit en
+     * priorité une table de correspondance cast Eloquent → type, avec repli
+     * explicite sur le type déjà déduit du schéma de la base (`$column['type']`,
+     * calculé par `scalarType()` au sein de `forTable()`) : cast non reconnu
+     * (classe de cast personnalisée, énumération, `AsCollection` et
+     * assimilés) ou colonne détectée comme clé étrangère (prioritaire sur tout
+     * cast scalaire, cf. `exposedColumns()` ci-dessus). Le caractère « texte
+     * long » (`long`, EX-450/EX-463) n'est en revanche jamais remis en cause
+     * par un cast — aucun cast Eloquent ne porte cette information — même
+     * lorsque le cast fait par ailleurs suivre le type de rendu.
+     *
+     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}  $column
+     * @return array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}
+     */
+    private function applyCastType(array $column, ?string $cast): array
+    {
+        if ($column['is_foreign_key'] || $cast === null) {
+            return $column;
+        }
+
+        $type = $this->castType($cast);
+
+        if ($type === null) {
+            return $column;
+        }
+
+        return [...$column, 'type' => $type->value];
+    }
+
+    /**
+     * EX-474 : correspondance cast Eloquent → type de rendu. `null` signale un
+     * cast non couvert par cette correspondance (classe de cast personnalisée
+     * implémentant `CastsAttributes`, cast d'énumération, `AsCollection` et
+     * assimilés, ou toute valeur de cast non reconnue) — à charge de l'appelant
+     * de replier sur le type déduit du schéma dans ce cas (cf. `applyCastType()`).
+     */
+    private function castType(string $cast): ?ColumnType
+    {
+        $normalized = strtolower($cast);
+        [$base] = explode(':', $normalized, 2);
+
+        return match (true) {
+            in_array($normalized, ['boolean', 'bool'], true) => ColumnType::BOOLEAN,
+            in_array($base, ['integer', 'int', 'real', 'float', 'double', 'decimal'], true) => ColumnType::NUMBER,
+            in_array($normalized, ['date', 'datetime', 'immutable_date', 'immutable_datetime', 'timestamp'], true)
+                || $base === 'custom_datetime' => ColumnType::DATE,
+            in_array($normalized, [
+                'array', 'json', 'collection', 'object',
+                'encrypted:array', 'encrypted:json', 'encrypted:collection', 'encrypted:object',
+            ], true) => ColumnType::JSON,
+            in_array($normalized, ['string', 'encrypted'], true) => ColumnType::STRING,
+            default => null,
+        };
     }
 
     /**
