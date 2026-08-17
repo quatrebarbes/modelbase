@@ -14,7 +14,6 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use ReflectionClass;
 use ReflectionMethod;
-use Throwable;
 
 /**
  * EX-307 (diagramme de relations, module 3) / EX-425 (tableaux d'objets liés,
@@ -26,8 +25,12 @@ use Throwable;
  * Construire une relation n'exécute aucune requête (`addConstraints()` ne
  * fait qu'ajouter une clause `where` au futur query builder), invoquer la
  * méthode de relation est donc sans effet de bord — sous réserve du même
- * garde-fou de sécurité que ColumnIntrospector (RelationMethodGuard,
- * partagé pour ne jamais faire diverger les deux mécanismes).
+ * garde-fou de sécurité que ColumnIntrospector (RelationMethodGuard, partagé
+ * pour ne jamais faire diverger les deux mécanismes). L'invocation elle-même
+ * passe par `RelationMethodGuard::invoke()`, sous `Connection::pretend()` :
+ * si la méthode invoquée n'est en réalité pas une relation mais exécute
+ * réellement une requête, celle-ci ne s'exécute jamais (cf. incident du
+ * 2026-08-17 documenté dans la classe).
  */
 class RelationIntrospector
 {
@@ -57,11 +60,7 @@ class RelationIntrospector
                 continue;
             }
 
-            try {
-                $relation = $method->invoke($instance);
-            } catch (Throwable) {
-                continue;
-            }
+            $relation = RelationMethodGuard::invoke($method, $instance);
 
             $type = $this->matchedType($relation);
 

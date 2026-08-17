@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 use ReflectionMethod;
-use Throwable;
 
 /**
  * Introspecte les colonnes de la table d'un modèle (nom, type mappé vers
@@ -78,7 +77,9 @@ class ColumnIntrospector
      * Construire une BelongsTo n'exécute aucune requête (`addConstraints()`
      * ne fait qu'ajouter une clause `where` au futur query builder), invoquer
      * la méthode de relation est donc sans effet de bord — sous réserve de
-     * ne jamais invoquer une méthode qui, elle, en aurait un (cf. RelationMethodGuard).
+     * ne jamais invoquer une méthode qui, elle, en aurait un (cf.
+     * RelationMethodGuard, dont `invoke()` neutralise ce risque via
+     * `Connection::pretend()`, incident du 2026-08-17).
      *
      * @return array<string, array{table: string, column: string}>
      */
@@ -92,11 +93,7 @@ class ColumnIntrospector
                 continue;
             }
 
-            try {
-                $relation = $method->invoke($instance);
-            } catch (Throwable) {
-                continue;
-            }
+            $relation = RelationMethodGuard::invoke($method, $instance);
 
             // `MorphTo` étend `BelongsTo` mais n'en est pas une au sens de
             // cette méthode : appelée sur une instance neuve (sans valeur

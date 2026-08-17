@@ -3,8 +3,11 @@
 namespace Quatrebarbes\Modelbase\Support;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use ReflectionClass;
 use ReflectionMethod;
+use ReflectionNamedType;
+use Throwable;
 
 /**
  * Détermine si une méthode publique sans paramètre requis du modèle hôte peut
@@ -13,7 +16,7 @@ use ReflectionMethod;
  * et RelationIntrospector (EX-307/EX-425), pour ne jamais faire diverger ce
  * garde-fou de sécurité entre les deux mécanismes de réflexion.
  *
- * Deux niveaux de protection, du plus fort au plus faible :
+ * Quatre niveaux de protection, du plus fort au plus faible :
  *
  * 1. Allowlist par origine (isInvocable) : une méthode n'est candidate que si
  *    elle est physiquement déclarée dans le fichier du modèle hôte lui-même
@@ -30,6 +33,27 @@ use ReflectionMethod;
  *    plus rare, où le modèle hôte redéclare directement une méthode Eloquent
  *    sensible dans son propre fichier (ex. override de `delete()`) — un cas
  *    que l'allowlist par origine, seule, ne suffirait pas à exclure.
+ * 3. Filtre par type de retour déclaré (defense en profondeur, incident du
+ *    2026-08-17 ci-dessous) : une méthode déclarant un type de retour qui ne
+ *    peut *pas* être une `Relation` (type natif — `void`/`bool`/`array`/...
+ *    hors `mixed`/`object`, inconclusifs — ou classe concrète non `Relation`,
+ *    y compris `self`/`static`) est exclue sans être invoquée. Sans type
+ *    déclaré, union ou intersection de types : invocation nécessaire, faute
+ *    de pouvoir trancher.
+ * 4. Invocation sous `Connection::pretend()` (`invoke()` ci-dessous, defense
+ *    en profondeur complémentaire au niveau 3, même incident) : quand
+ *    l'invocation reste nécessaire (méthode sans type de retour déclaré,
+ *    échappant au niveau 3), elle a lieu à l'intérieur d'un `pretend()` sur
+ *    la connexion de l'instance — toute requête que la méthode exécuterait
+ *    réellement (au lieu de se contenter de construire une relation) est
+ *    court-circuitée par Laravel lui-même (`Connection::select()` renvoie `[]`
+ *    sans jamais toucher le PDO sous-jacent), donc sans le moindre risque
+ *    d'épuisement mémoire, quel que soit le type de retour déclaré. Ne
+ *    protège que la connexion de l'instance elle-même (une requête sur une
+ *    *autre* connexion en dur échapperait à ce filtre, mais serait alors
+ *    typiquement typée et donc déjà exclue par le niveau 3) et pas un effet
+ *    de bord purement PHP sans requête SQL (boucle lourde, fichier chargé en
+ *    mémoire) — risque résiduel assumé.
  *
  * Limite documentée : une relation déclarée non pas directement dans le
  * modèle hôte mais via un trait *propre à l'application hôte* (ex. un
@@ -50,6 +74,24 @@ use ReflectionMethod;
  * par une ; l'allowlist par origine ci-dessus ferme toute la classe de bug
  * (n'importe quel futur trait ajoutant une méthode publique à effet de bord)
  * sans avoir à l'énumérer.
+ *
+ * Incident du 2026-08-17 (listing des modèles sur pgsql, `Allowed memory size
+ * ... exhausted` dans `Connection::select()`) : construire une relation
+ * n'exécute aucune requête, mais rien ne garantissait que la méthode invoquée
+ * en soit réellement une — une méthode publique sans paramètre requis
+ * déclarée directement dans le modèle hôte (donc couverte par l'allowlist
+ * ci-dessus) qui exécute elle-même une lecture non bornée (ex. `public
+ * function history(): Collection { return $this->hasMany(...)->get(); }`)
+ * était invoquée à l'aveugle, chargeant tout le résultat en mémoire avant
+ * d'être écartée au constat que ce n'est pas une `BelongsTo`/`Relation`. Le
+ * filtre par type de retour (niveau 3) couvre ce cas dès que la méthode
+ * déclare un type de retour explicite (le cas courant pour un accesseur ou
+ * une relation Eloquent moderne) ; `invoke()` (niveau 4, ajouté dans la
+ * foulée à la demande de l'utilisateur — « est-ce qu'on aurait pu s'en sortir
+ * avec un pretend ? ») couvre le risque résiduel laissé ouvert par le niveau
+ * 3 seul (méthode sans type de retour déclaré) pour cette même classe de bug,
+ * en empêchant la requête elle-même de s'exécuter plutôt qu'en essayant de la
+ * prédire depuis un type déclaré.
  */
 final class RelationMethodGuard
 {
@@ -66,7 +108,70 @@ final class RelationMethodGuard
             return false;
         }
 
-        return ! in_array($method->getName(), self::denylist(), true);
+        if (in_array($method->getName(), self::denylist(), true)) {
+            return false;
+        }
+
+        return self::returnTypeAllowsInvocation($method);
+    }
+
+    /**
+     * Invoque une méthode déjà validée par `isInvocable()` ci-dessus, sous
+     * `Connection::pretend()` (niveau 4 de la doc de classe) — `null` si
+     * l'invocation lève une exception, comme le faisaient auparavant les deux
+     * call sites (`ColumnIntrospector::relationForeignKeys()`/
+     * `RelationIntrospector::relationsOf()`) avant extraction ici. La valeur
+     * de retour de la méthode est récupérée via une variable capturée par
+     * référence, `pretend()` renvoyant lui-même le journal de requêtes
+     * (vide ici, aucune requête n'étant réellement exécutée), pas le résultat
+     * du callback.
+     */
+    public static function invoke(ReflectionMethod $method, Model $instance): mixed
+    {
+        $result = null;
+
+        try {
+            $instance->getConnection()->pretend(function () use ($method, $instance, &$result) {
+                $result = $method->invoke($instance);
+            });
+        } catch (Throwable) {
+            return null;
+        }
+
+        return $result;
+    }
+
+    /**
+     * `false` uniquement lorsque le type de retour déclaré exclut à coup sûr
+     * une `Relation` — un type composé (union/intersection) ou l'absence de
+     * type déclaré ne permet pas de trancher sans invoquer la méthode.
+     */
+    private static function returnTypeAllowsInvocation(ReflectionMethod $method): bool
+    {
+        $type = $method->getReturnType();
+
+        if (! $type instanceof ReflectionNamedType) {
+            return true;
+        }
+
+        if ($type->isBuiltin()) {
+            // `mixed`/`object` sont inconclusifs (une Relation est un objet,
+            // et peut être renvoyée sous un type large) : seuls les types
+            // natifs plus précis (void/bool/int/float/string/array/
+            // callable/iterable/never/null/true/false) excluent réellement
+            // une Relation.
+            return in_array(strtolower($type->getName()), ['mixed', 'object'], true);
+        }
+
+        $name = $type->getName();
+
+        // `self`/`static`/`parent` désignent le modèle hôte lui-même (ou un
+        // ancêtre), jamais une Relation.
+        if (in_array(strtolower($name), ['self', 'static', 'parent'], true)) {
+            return false;
+        }
+
+        return is_a($name, Relation::class, true);
     }
 
     /**

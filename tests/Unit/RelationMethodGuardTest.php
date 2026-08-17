@@ -141,4 +141,184 @@ class RelationMethodGuardTest extends TestCase
 
         $this->assertFalse(RelationMethodGuard::isInvocable($method, $class));
     }
+
+    /**
+     * Incident du 2026-08-17 (listing des modèles sur pgsql, OOM dans
+     * `Connection::select()`) : une méthode publique sans paramètre requis,
+     * déclarée dans le modèle hôte, qui exécute elle-même une lecture non
+     * bornée plutôt que de construire une relation, chargeait tout son
+     * résultat en mémoire avant d'être écartée au constat que ce n'est pas
+     * une `BelongsTo`. Dès que le type de retour déclaré exclut une
+     * `Relation` (ici `Collection`), la méthode ne doit plus être invoquée du
+     * tout.
+     */
+    public function test_it_rejects_a_method_whose_declared_return_type_is_not_a_relation(): void
+    {
+        $instance = new class extends Model
+        {
+            public function history(): \Illuminate\Support\Collection
+            {
+                return $this->hasMany(self::class)->get();
+            }
+        };
+
+        $class = new ReflectionClass($instance);
+        $method = $class->getMethod('history');
+
+        $this->assertFalse(RelationMethodGuard::isInvocable($method, $class));
+    }
+
+    /**
+     * Un type de retour natif plus précis (`void`, `bool`, `array`...) exclut
+     * tout autant une `Relation` qu'une classe concrète non `Relation`.
+     */
+    public function test_it_rejects_a_method_with_a_scalar_return_type(): void
+    {
+        $instance = new class extends Model
+        {
+            public function isSomething(): bool
+            {
+                return true;
+            }
+        };
+
+        $class = new ReflectionClass($instance);
+        $method = $class->getMethod('isSomething');
+
+        $this->assertFalse(RelationMethodGuard::isInvocable($method, $class));
+    }
+
+    /**
+     * `self`/`static` désignent le modèle hôte lui-même, jamais une Relation
+     * — exclu sans invocation même si aucun autre garde-fou ne le couvrirait.
+     */
+    public function test_it_rejects_a_method_returning_static(): void
+    {
+        $instance = new class extends Model
+        {
+            public function withStaticReturnType(): static
+            {
+                return $this;
+            }
+        };
+
+        $class = new ReflectionClass($instance);
+        $method = $class->getMethod('withStaticReturnType');
+
+        $this->assertFalse(RelationMethodGuard::isInvocable($method, $class));
+    }
+
+    /**
+     * Sans type de retour déclaré, impossible de trancher sans invoquer —
+     * comportement historique conservé (risque résiduel documenté).
+     */
+    public function test_it_allows_a_method_without_a_declared_return_type(): void
+    {
+        $instance = new class extends Model
+        {
+            public function category()
+            {
+                return $this->belongsTo(self::class);
+            }
+        };
+
+        $class = new ReflectionClass($instance);
+        $method = $class->getMethod('category');
+
+        $this->assertTrue(RelationMethodGuard::isInvocable($method, $class));
+    }
+
+    /**
+     * `mixed` est inconclusif (une Relation est un objet, qui peut être
+     * déclaré sous un type large) : ne doit pas exclure la méthode.
+     */
+    public function test_it_allows_a_method_with_a_mixed_return_type(): void
+    {
+        $instance = new class extends Model
+        {
+            public function category(): mixed
+            {
+                return $this->belongsTo(self::class);
+            }
+        };
+
+        $class = new ReflectionClass($instance);
+        $method = $class->getMethod('category');
+
+        $this->assertTrue(RelationMethodGuard::isInvocable($method, $class));
+    }
+
+    /**
+     * Niveau 4 (invoke(), incident du 2026-08-17) : la construction d'une
+     * relation Eloquent réelle continue de fonctionner normalement sous
+     * `Connection::pretend()` — `addConstraints()` ne fait qu'ajouter une
+     * clause `where`, jamais exécutée à la construction.
+     */
+    public function test_invoke_returns_the_actual_relation_for_a_genuine_relation_method(): void
+    {
+        $instance = new class extends Model
+        {
+            public function category()
+            {
+                return $this->belongsTo(self::class);
+            }
+        };
+
+        $class = new ReflectionClass($instance);
+        $method = $class->getMethod('category');
+
+        $this->assertInstanceOf(BelongsTo::class, RelationMethodGuard::invoke($method, $instance));
+    }
+
+    /**
+     * Niveau 4 (invoke(), incident du 2026-08-17) : preuve que la requête
+     * n'est jamais réellement exécutée, pas seulement qu'une éventuelle
+     * exception est avalée silencieusement — sous exécution réelle,
+     * interroger une table inexistante lèverait une `QueryException` ;
+     * `pretend()` court-circuite `Connection::select()` avant même d'ouvrir
+     * la table, renvoyant un résultat vide sans jamais toucher le PDO
+     * sous-jacent. Ce test échouerait (exception non attrapée) sans le
+     * niveau 4 — une méthode sans type de retour déclaré comme celle-ci
+     * échappe au niveau 3 (filtre par type).
+     */
+    public function test_invoke_neutralizes_a_query_the_method_would_actually_execute(): void
+    {
+        $instance = new class extends Model
+        {
+            protected $table = 'this_table_does_not_exist_anywhere';
+
+            public function history()
+            {
+                return $this->newQuery()->get();
+            }
+        };
+
+        $class = new ReflectionClass($instance);
+        $method = $class->getMethod('history');
+
+        $result = RelationMethodGuard::invoke($method, $instance);
+
+        $this->assertInstanceOf(\Illuminate\Support\Collection::class, $result);
+        $this->assertCount(0, $result);
+    }
+
+    /**
+     * Comportement conservé de l'ancien `catch (Throwable) { continue; }`
+     * dupliqué jusqu'ici dans les deux call sites, désormais centralisé ici.
+     */
+    public function test_invoke_returns_null_when_the_method_throws(): void
+    {
+        $instance = new class extends Model
+        {
+            public function broken()
+            {
+                throw new \RuntimeException('boom');
+            }
+        };
+
+        $class = new ReflectionClass($instance);
+        $method = $class->getMethod('broken');
+
+        $this->assertNull(RelationMethodGuard::invoke($method, $instance));
+    }
 }
