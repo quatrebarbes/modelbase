@@ -62,6 +62,14 @@ const { data, pending } = await useAsyncData(
   { watch: [queryParams] }
 )
 
+// Un changement de tri/filtre/page ne remonte pas la page (même route, seule
+// la query string change, cf. `key` de definePageMeta ci-dessus) : le
+// `<NuxtLoadingIndicator>` global (app.vue) ne se déclenche donc pas tout
+// seul dans ce cas, contrairement à une véritable navigation entre routes.
+// Piloté manuellement sur ce `pending` pour rester visible aussi ici.
+const loadingIndicator = useLoadingIndicator()
+watch(pending, (isPending) => (isPending ? loadingIndicator.start() : loadingIndicator.finish()))
+
 const { data: columnsData } = await useAsyncData(
   `items-columns-${connection}-${model}`,
   () => api(`/connections/${connection}/models/${model}/columns`)
@@ -141,7 +149,6 @@ useHead({ title: t('items.title', { model }) })
     />
     <div v-if="meta && meta.total > 0" class="item-pagination-row">
       <ItemPagination v-model:page="page" v-model:per-page="perPage" :meta="meta" />
-      <Spinner v-if="pending" />
     </div>
   </main>
 </template>
