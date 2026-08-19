@@ -11,7 +11,7 @@ Celui-ci permet de parcourir :
 
 ## Stack
 
-- Laravel 13
+- Laravel 11, 12 ou 13 (package) — l'app de démo `demo/` cible spécifiquement Laravel 13
 - Nuxt 3
 - docker & docker-compose
 
