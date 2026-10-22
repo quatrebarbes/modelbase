@@ -12,16 +12,16 @@ Celui-ci permet de parcourir :
 ## Stack
 
 - Laravel 11, 12 ou 13 (package) — l'app de démo `demo/` cible spécifiquement Laravel 13
-- Nuxt 3
+- Laravel Livewire 3 (front, cf. docs/roadmap.md section « Réécriture du front : Nuxt → Livewire »)
 - docker & docker-compose
 
 ## Conventions de développement
 
 - Nommage des tables : snake_case, pluriel
 - Migrations avant models, models avant controllers
-- Tests Feature pour chaque endpoint API
+- Tests Feature pour chaque endpoint API et chaque composant Livewire full-page
 - Tests Unit pour chaque fonction
-- Avant de commit un changement dans `frontend/`, relancer `./docker/build-front-package.sh` et committer le résultat dans `resources/dist/modelbase/` (cf. docs/roadmap.md Phase 6) — sinon le build publié via `vendor:publish` reste désynchronisé du code source
+- Avant de commit un changement dans `resources/js-src/`, relancer `./docker/build-diagram-asset.sh` et committer le résultat dans `resources/dist/modelbase-diagram/` — sinon le build publié via `vendor:publish --tag=modelbase-diagram-assets` reste désynchronisé du code source (seul asset du front nécessitant encore un build, cf. Phase 35)
 
 ## Documentation
 

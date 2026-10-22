@@ -36,7 +36,7 @@ class ModelbaseServiceProviderTest extends TestCase
     }
 
     /**
-     * EX-106 : le fichier de config est publiable sous son propre tag, à
+     * Le fichier de config est publiable sous son propre tag, à
      * l'emplacement conventionnel config/modelbase.php de l'app hôte.
      */
     public function test_it_registers_the_config_file_for_publishing(): void
@@ -49,16 +49,19 @@ class ModelbaseServiceProviderTest extends TestCase
     }
 
     /**
-     * EX-106 : les assets compilés du front sont publiés sous
-     * public/{route_prefix}/app, pas public/vendor/... — le build Nuxt fige
-     * `app.baseURL` sur cette URL précise (cf. ModelbaseServiceProvider).
+     * Phase 35 : seul asset du front nécessitant encore un build JS
+     * (Cytoscape.js, diagramme de relations) est publié sous
+     * public/{route_prefix}/diagram-assets, pas public/vendor/... — même
+     * principe que le raccordement à `app.baseURL` d'un front SPA classique
+     * (cf. ModelbaseServiceProvider), pour rester cohérent avec le préfixe
+     * sous lequel le front lui-même (routes/web.php) est servi.
      */
-    public function test_it_registers_the_compiled_front_assets_for_publishing_under_the_configured_route_prefix(): void
+    public function test_it_registers_the_diagram_assets_for_publishing_under_the_configured_route_prefix(): void
     {
-        $paths = ServiceProvider::pathsToPublish(ModelbaseServiceProvider::class, 'modelbase-assets');
+        $paths = ServiceProvider::pathsToPublish(ModelbaseServiceProvider::class, 'modelbase-diagram-assets');
 
         $this->assertSame([
-            $this->packageRoot().'/resources/dist/modelbase' => public_path('modelbase/app'),
+            $this->packageRoot().'/resources/dist/modelbase-diagram' => public_path('modelbase/diagram-assets'),
         ], $this->realpaths($paths));
     }
 
@@ -66,16 +69,16 @@ class ModelbaseServiceProviderTest extends TestCase
      * Une app hôte configurant un préfixe de route différent voit ses assets
      * publiés sous ce même préfixe, pas sous 'modelbase' en dur.
      */
-    public function test_the_assets_publish_destination_follows_a_custom_route_prefix(): void
+    public function test_the_diagram_assets_publish_destination_follows_a_custom_route_prefix(): void
     {
         config(['modelbase.route_prefix' => 'custom-prefix']);
 
         (new ModelbaseServiceProvider(app()))->boot();
 
-        $paths = ServiceProvider::pathsToPublish(ModelbaseServiceProvider::class, 'modelbase-assets');
+        $paths = ServiceProvider::pathsToPublish(ModelbaseServiceProvider::class, 'modelbase-diagram-assets');
 
         $this->assertSame([
-            $this->packageRoot().'/resources/dist/modelbase' => public_path('custom-prefix/app'),
+            $this->packageRoot().'/resources/dist/modelbase-diagram' => public_path('custom-prefix/diagram-assets'),
         ], $this->realpaths($paths));
     }
 }

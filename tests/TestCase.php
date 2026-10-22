@@ -3,13 +3,23 @@
 namespace Quatrebarbes\Modelbase\Tests;
 
 use Quatrebarbes\Modelbase\ModelbaseServiceProvider;
+use Livewire\LivewireServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
 {
+    /**
+     * Testbench ne découvre pas automatiquement les providers des
+     * dépendances du package (contrairement à une vraie app Laravel) —
+     * LivewireServiceProvider doit donc être déclaré explicitement ici
+     * (Phase 27) pour que `livewire`, les directives Blade
+     * (@livewireStyles/@livewireScripts) et le routage des composants
+     * full-page fonctionnent dans les tests.
+     */
     protected function getPackageProviders($app): array
     {
         return [
+            LivewireServiceProvider::class,
             ModelbaseServiceProvider::class,
         ];
     }
