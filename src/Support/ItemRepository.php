@@ -313,6 +313,26 @@ class ItemRepository
     }
 
     /**
+     * EX-482/EX-483 : noms des colonnes masquées d'un modèle (cf.
+     * `ColumnIntrospector::hiddenColumnNames()`), à signaler sur la fiche
+     * détail sans jamais en restituer la valeur (EX-481). Liste vide pour une
+     * table absente, comme `columns()` ci-dessus.
+     *
+     * @return array<int, string>
+     */
+    public function hiddenColumns(string $connection, string $model): array
+    {
+        $class = $this->resolver->resolve($connection, $model);
+        $instance = new $class;
+
+        if (! $instance->getConnection()->getSchemaBuilder()->hasTable($instance->getTable())) {
+            return [];
+        }
+
+        return $this->columns->hiddenColumnNames($connection, $instance);
+    }
+
+    /**
      * EX-424/EX-412/EX-417/EX-421 : crée un item à partir des valeurs
      * soumises, via une instance Eloquent réelle du modèle hôte
      * (fill()+save()) pour déclencher creating/created. Les colonnes

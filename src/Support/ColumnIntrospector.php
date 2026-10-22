@@ -165,6 +165,13 @@ class ColumnIntrospector
      * par `Support\ModelRepository` (nombre de propriétés du listing des
      * modèles, EX-302/EX-313, module 3) sans dupliquer cette logique.
      *
+     * EX-478/EX-479 : une colonne masquée (`isHidden()`) est retirée de cet
+     * ensemble quelle que soit la source qui l'y aurait fait entrer, hormis
+     * la clé primaire — toutes les vues (listing, fiche, formulaire,
+     * filtre/tri, objets liés, nombre de propriétés) comme toutes les
+     * écritures (`ItemRepository::writable()`) dérivant de cette méthode, ce
+     * seul filtre suffit à ne jamais restituer ni accepter sa valeur (EX-481).
+     *
      * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>
      */
     public function exposedColumns(string $connection, Model $instance): array
@@ -172,9 +179,11 @@ class ColumnIntrospector
         $relations = $this->relationForeignKeys($instance);
         $allowlist = $this->allowlistedColumnNames($instance, $relations);
         $casts = $instance->getCasts();
+        $key = $instance->getKeyName();
 
         return collect($this->forTable($connection, $instance->getTable()))
             ->filter(fn (array $column) => in_array($column['name'], $allowlist, true))
+            ->reject(fn (array $column) => $column['name'] !== $key && $this->isHidden($instance, $column['name']))
             ->map(function (array $column) use ($relations, $casts) {
                 if (isset($relations[$column['name']])) {
                     return [
@@ -257,6 +266,48 @@ class ColumnIntrospector
     public function exposedColumnNames(string $connection, Model $instance): array
     {
         return array_column($this->exposedColumns($connection, $instance), 'name');
+    }
+
+    /**
+     * EX-477/EX-480 : une colonne est masquée si le modèle hôte la déclare
+     * dans `$hidden`, ou s'il déclare une liste `$visible` non vide qui ne la
+     * contient pas. Les attributs PHP `#[Hidden]`/`#[Visible]` (Laravel 13)
+     * sont déjà fusionnés dans `getHidden()`/`getVisible()` dès le
+     * constructeur du modèle. Seule la déclaration du modèle est lue — aucun
+     * accès à la connexion, la règle vaut donc pour tout driver (y compris
+     * non SQL, ex. snow-driver) ; un `makeHidden()`/`makeVisible()` ponctuel
+     * n'a pas lieu d'être ici, `$instance` étant toujours une instance vide.
+     */
+    public function isHidden(Model $instance, string $column): bool
+    {
+        if (in_array($column, $instance->getHidden(), true)) {
+            return true;
+        }
+
+        $visible = $instance->getVisible();
+
+        return $visible !== [] && ! in_array($column, $visible, true);
+    }
+
+    /**
+     * EX-482 : noms des colonnes réelles de la table masquées par le modèle
+     * (`isHidden()`), dans l'ordre du schéma, hors clé primaire (toujours
+     * exposée, EX-479). Un nom de `$hidden` sans colonne réelle (accesseur,
+     * relation, attribut `$appends`) n'est pas une colonne et n'est donc
+     * jamais renvoyé — même intersection avec le schéma que
+     * `exposedColumns()`.
+     *
+     * @return array<int, string>
+     */
+    public function hiddenColumnNames(string $connection, Model $instance): array
+    {
+        $key = $instance->getKeyName();
+
+        return collect($this->forTable($connection, $instance->getTable()))
+            ->pluck('name')
+            ->filter(fn (string $name) => $name !== $key && $this->isHidden($instance, $name))
+            ->values()
+            ->all();
     }
 
     /**

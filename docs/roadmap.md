@@ -1,6 +1,8 @@
 # Roadmap
 
-Dernière mise à jour : 2026-08-20 — second passage d'audit Vue → Blade (toolbar du listing d'items, libellé des liens de clé étrangère), demandé par l'utilisateur après le premier audit exhaustif. Cf. entrée dédiée dans la section « Réécriture du front : Nuxt → Livewire » ci-dessous.
+Dernière mise à jour : 2026-10-22 — Phase 38 (masquage des colonnes `$hidden`/`$visible`, module 4 EX-477 à EX-483, EX-302 précisée) développée et close.
+
+Mise à jour précédente : 2026-08-20 — second passage d'audit Vue → Blade (toolbar du listing d'items, libellé des liens de clé étrangère), demandé par l'utilisateur après le premier audit exhaustif. Cf. entrée dédiée dans la section « Réécriture du front : Nuxt → Livewire » ci-dessous.
 
 Mise à jour précédente : 2026-08-19 — réécriture du front Nuxt en Laravel Livewire (Phases 27 à 37) développée et close, y compris la bascule finale : le front est désormais entièrement Livewire, `frontend/` (Nuxt) supprimé. Cf. section « Réécriture du front : Nuxt → Livewire » ci-dessous pour le contexte et les décisions d'architecture.
 
@@ -15,9 +17,9 @@ Cette roadmap découle des 4 SFD de `docs/sfd/` :
 1. Architecture générale (EX-101 à EX-119)
 2. Bases de données (EX-201 à EX-213, EX-215)
 3. Modèles (EX-301 à EX-316)
-4. Items (EX-401 à EX-456, EX-463 à EX-476)
+4. Items (EX-401 à EX-456, EX-463 à EX-483)
 
-**Toutes les exigences EX-101 à EX-476 sont développées.** Audit de cohérence SFD ↔ code réalisé le 2026-08-10 (aucun écart trouvé à cette date).
+**Toutes les exigences EX-101 à EX-483 sont développées.** Audit de cohérence SFD ↔ code réalisé le 2026-08-10 (aucun écart trouvé à cette date).
 
 ## Points d'attention transverses, toujours valables
 
@@ -349,3 +351,32 @@ Suite et fin de la réécriture du front (cf. section « Réécriture du front :
     - Suite complète vérifiée à l'issue des dix phases : 359 tests au vert (`composer test`, conteneur réel), plus un parcours de bout en bout contre l'environnement docker-compose réel (mysql) : connexions → modèles → listing d'items → détail d'item, avec données réelles de l'app de démo.
 
 **Limite assumée, commune aux Phases 28 à 37** : contrairement aux phases du backend (modules 2 à 4, développées avec vérification manuelle systématique contre docker-compose après chaque phase), ce lot a été développé phase après phase sans un tel arrêt intermédiaire, à la demande explicite de l'utilisateur (« go pour toutes les phases restantes, je testerai à la fin »). La vérification automatisée (`composer test`) est restée systématique à chaque étape ; seule la vérification manuelle/visuelle a été repoussée à la fin.
+
+## Phase 38 — Masquage des colonnes `$hidden`/`$visible` (module 4, EX-477 à EX-483 ; module 3, EX-302 précisée) — close
+
+**Constat** : aucune vue ne tient compte de `$hidden`/`$visible` aujourd'hui. Exemple dans `demo/` : `User::password` (fillable, cast `hashed`, `#[Hidden]`) est affiché en clair (hash) dans le listing et la fiche. La lecture se fait par query builder brut (`ItemRepository::find()`/`paginate()`), donc même une sérialisation `toArray()` n'aurait rien masqué.
+
+**Point d'entrée unique** : toutes les vues (listing, fiche, formulaire, filtre/tri, tableaux d'objets liés, endpoint `/columns`, nombre de propriétés) et toutes les écritures (`ItemRepository::writable()`) dérivent déjà de `ColumnIntrospector::exposedColumns()`. Le retrait des colonnes masquées à cet endroit couvre donc EX-478/EX-481 et la précision d'EX-302 sans modifier chaque consommateur.
+
+1. **`ColumnIntrospector`** :
+    - nouvelle méthode `isHidden(Model $instance, string $column): bool` — `in_array($column, $instance->getHidden())` ou (`getVisible()` non vide et colonne absente) (EX-477). Lue sur une instance vide (`new $class`), sans aucun appel à la connexion (EX-480). `#[Hidden]`/`#[Visible]` (Laravel 13) sont déjà fusionnés dans `getHidden()`/`getVisible()` par `initializeHidesAttributes()` au constructeur ; sous Laravel 11/12, seules les propriétés existent — rien à faire de plus.
+    - `exposedColumns()` : exclure toute colonne masquée sauf `getKeyName()` (EX-478, EX-479).
+    - nouvelle méthode `hiddenColumnNames(string $connection, Model $instance): array` — colonnes réelles de la table (`forTable()`) masquées, hors clé primaire, dans l'ordre du schéma (EX-482).
+2. **`ItemDetail` (Livewire) + vue** : bloc listant les noms renvoyés par `hiddenColumnNames()`, rendu seulement s'il est non vide (EX-482/EX-483). Pas de valeur, pas de lien. Rien dans `ItemListing` ni `RelationTable` (cf. avertissement SFD). Clés i18n fr/en dans `itemDetail.php` (`LangKeyParityTest`).
+3. **API JSON** : aucune modification attendue (`/columns`, `/items`, `/items/{id}` s'appuient sur `columnsFor()`). Ne pas exposer la liste des colonnes masquées via l'API sans exigence dédiée.
+4. **Commentaires de code** : référencer EX-477 à EX-483 aux endroits modifiés ; mettre à jour le docblock d'`exposedColumns()` (allowlist « moins colonnes masquées »).
+
+**Tests** :
+- Unit `ColumnIntrospectorTest` : `$hidden` seul ; `$visible` seul (colonnes absentes masquées) ; `$hidden` + `$visible` ; colonne masquée mais fillable / castée / FK de relation (toujours exclue) ; clé primaire masquée (toujours exposée, absente de `hiddenColumnNames()`) ; nom présent dans `$hidden` sans colonne réelle (ignoré par `hiddenColumnNames()`).
+- Feature : listing et fiche sans la colonne ni sa valeur (vérifier l'absence de la valeur brute dans le HTML et le JSON) ; filtre/tri sur une colonne masquée passé dans l'URL → rejeté comme une colonne inconnue (EX-481) ; formulaire de création/modification sans le champ, et valeur soumise de force ignorée à l'écriture ; tableau d'objets liés appliquant le masquage du modèle lié ; `property_count` du listing des modèles (EX-302) ; bloc « colonnes masquées » présent/absent sur la fiche (EX-482/EX-483).
+- Modèles de test : noms de classe uniques à l'échelle de la suite (cf. points d'attention transverses).
+
+**Compatibilité snow-driver** (`../snow-driver`, vérifiée le 2026-10-22) : `ServiceNowModel` étend `Illuminate\Database\Eloquent\Model` sans surcharger `getHidden()`/`getVisible()`/`getFillable()` ; le générateur de modèles (`ModelFileGenerator`) ne produit ni `$hidden` ni `$visible`. Comportement inchangé pour les modèles générés ; un `$hidden` ajouté à la main est respecté. `hiddenColumnNames()` réutilise `forTable()` (introspection déjà mise en cache par snow-driver), sans requête supplémentaire. À vérifier manuellement contre la démo snow-driver en fin de phase.
+
+**Décision à noter** : les noms affichés par EX-482 sont restreints aux colonnes réellement présentes dans la table — un nom de `$hidden` désignant un accesseur, une relation ou un attribut `$appends` n'est pas une colonne et n'est pas signalé. Le caractère masqué reste, lui, déterminé sans accès à la source (EX-480).
+
+**Effet de bord assumé (cf. avertissement SFD sous EX-481)** : sur `demo/`, `User::password` n'est plus saisissable ; créer un `User` via modelbase échoue désormais si la colonne est `NOT NULL` sans défaut — l'erreur est remontée par le mécanisme existant (EX-417).
+
+**Vérification manuelle** : docker-compose (`demo/`, mysql) — `users` : `password` et `remember_token` absents du listing/de la fiche/du formulaire, cités par leur nom sur la fiche ; modèle sans masquage : aucune mention.
+
+**Bilan (2026-10-22)** — implémenté conformément au plan ci-dessus, sans écart : `ColumnIntrospector::isHidden()`/`hiddenColumnNames()`, filtre dans `exposedColumns()`, `ItemRepository::hiddenColumns()`, bloc `item-detail__hidden-columns` dans `ItemDetail` (clé i18n `itemDetail.hiddenColumns` fr/en). 15 tests ajoutés (7 Unit `ColumnIntrospectorTest` dont l'attribut `#[Hidden]` et l'absence de requête pour EX-480, 6 Feature Livewire `HiddenColumnsTest`, 2 Feature API dans `ItemListingTest`). Suite complète : 378 tests au vert (`docker compose exec -w /var/www app composer test`). Vérifié contre `demo/` (mysql) : fiche `User` sans le hash `password` (HTML et API), mention « Colonnes masquées par le modèle : `password`, `remember_token` », `property_count` de `User` passé à 6. **Non fait** : la vérification manuelle contre la démo snow-driver (aucune instance ServiceNow disponible dans cette session) — la compatibilité repose sur l'analyse du code de snow-driver ci-dessus.

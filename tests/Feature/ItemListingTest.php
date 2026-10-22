@@ -107,6 +107,9 @@ class ItemListingTest extends TestCase
         $this->putModel('ListingCategory', 'categories', ['name']);
         $this->putModel('ListingProduct', 'products', ['category_id', 'name', 'price', 'metadata']);
         $this->putModel('ListingBlank', 'empties', ['name']);
+        // EX-477 à EX-481 : même table que ListingProduct, `price` (fillable)
+        // et `metadata` (fillable + casté) déclarés masqués.
+        $this->putModel('ListingMaskedProduct', 'products', ['category_id', 'name', 'price', 'metadata'], ['metadata' => 'array'], ['price', 'metadata']);
         $this->putModel('ListingCastable', 'castables', ['category_id', 'flag', 'amount', 'happened_at', 'payload'], [
             // `category_id` : cast scalaire délibérément en conflit avec la
             // clé étrangère (EX-423) — doit rester `foreign_key` (règle de
@@ -134,11 +137,12 @@ class ItemListingTest extends TestCase
      * @param  array<int, string>  $fillable
      * @param  array<string, string>  $casts
      */
-    private function putModel(string $class, string $table, array $fillable, array $casts = []): void
+    private function putModel(string $class, string $table, array $fillable, array $casts = [], array $hidden = []): void
     {
         $namespace = app()->getNamespace();
         $fillableList = collect($fillable)->map(fn (string $column) => "'{$column}'")->implode(', ');
         $castsList = collect($casts)->map(fn (string $cast, string $column) => "'{$column}' => '{$cast}'")->implode(', ');
+        $hiddenList = collect($hidden)->map(fn (string $column) => "'{$column}'")->implode(', ');
 
         File::put(app_path("Models/{$class}.php"), <<<PHP
         <?php
@@ -156,6 +160,8 @@ class ItemListingTest extends TestCase
             protected \$fillable = [{$fillableList}];
 
             protected \$casts = [{$castsList}];
+
+            protected \$hidden = [{$hiddenList}];
         }
         PHP);
 
@@ -400,6 +406,53 @@ class ItemListingTest extends TestCase
         $response->assertOk();
         $this->assertArrayNotHasKey('internal_note', $response->json('data.0'));
         $this->assertArrayHasKey('metadata', $response->json('data.0'));
+    }
+
+    /**
+     * EX-478/EX-481 : une colonne masquée, même fillable ou castée, n'apparaît
+     * ni dans le listing, ni dans le détail, ni dans `/columns`.
+     */
+    public function test_a_hidden_column_is_absent_from_listing_detail_and_columns(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $listing = $this->actingAs($user)->getJson($this->indexUrl('ListingMaskedProduct'));
+        $listing->assertOk();
+        $this->assertArrayNotHasKey('price', $listing->json('data.0'));
+        $this->assertArrayNotHasKey('metadata', $listing->json('data.0'));
+        $this->assertArrayHasKey('name', $listing->json('data.0'));
+
+        $detail = $this->actingAs($user)->getJson($this->showUrl('ListingMaskedProduct', '1'));
+        $detail->assertOk();
+        $this->assertEqualsCanonicalizing(
+            ['id', 'category_id', 'name', 'created_at', 'updated_at'],
+            array_column($detail->json('data.values'), 'column')
+        );
+        $this->assertStringNotContainsString('9.99', $detail->getContent());
+
+        $columns = $this->actingAs($user)->getJson(route('modelbase.api.connections.models.columns.index', [
+            'connection' => 'primary',
+            'model' => 'ListingMaskedProduct',
+        ]));
+        $this->assertNotContains('price', array_column($columns->json('data'), 'name'));
+    }
+
+    /**
+     * EX-481 : un filtre ou un tri fourni dans l'URL sur une colonne masquée
+     * est rejeté comme celui d'une colonne inconnue (422), sans servir de
+     * critère.
+     */
+    public function test_it_rejects_a_filter_or_sort_on_a_hidden_column(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $this->actingAs($user)
+            ->getJson($this->indexUrl('ListingMaskedProduct', ['filter' => ['price' => '9.99']]))
+            ->assertStatus(422);
+
+        $this->actingAs($user)
+            ->getJson($this->indexUrl('ListingMaskedProduct', ['sort' => '-price']))
+            ->assertStatus(422);
     }
 
     public function test_it_returns_an_empty_list_without_error_for_a_model_with_no_items(): void

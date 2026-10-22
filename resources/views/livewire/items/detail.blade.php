@@ -97,6 +97,16 @@
         </dl>
     @endif
 
+    {{-- EX-482/EX-483 : noms des colonnes masquées seulement, jamais leur valeur (EX-481). --}}
+    @if ($hiddenColumns !== [])
+        <p class="item-detail__hidden-columns">
+            {{ __('modelbase::itemDetail.hiddenColumns') }}
+            @foreach ($hiddenColumns as $hiddenColumn)
+                <code>{{ $hiddenColumn }}</code>@if (! $loop->last), @endif
+            @endforeach
+        </p>
+    @endif
+
     @if ($relations !== [])
         <div class="relation-tabs">
             @if (count($relations) > 1)

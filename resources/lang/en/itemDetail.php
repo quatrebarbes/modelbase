@@ -27,4 +27,5 @@ return [
     'reindex' => 'Reindex (Laravel Scout)',
     'reindexed' => 'Search index updated.',
     'reindexFailed' => 'The search index update failed.',
+    'hiddenColumns' => 'Columns hidden by the model:',
 ];

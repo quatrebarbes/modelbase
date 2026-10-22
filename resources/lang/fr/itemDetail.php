@@ -27,4 +27,5 @@ return [
     'reindex' => 'Réindexer (Laravel Scout)',
     'reindexed' => 'Index mis à jour.',
     'reindexFailed' => "La mise à jour de l'index a échoué.",
+    'hiddenColumns' => 'Colonnes masquées par le modèle :',
 ];

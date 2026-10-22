@@ -193,6 +193,180 @@ class ColumnIntrospectorTest extends TestCase
     }
 
     /**
+     * EX-477/EX-478 : une colonne déclarée dans `$hidden` est retirée des
+     * colonnes exposées même lorsqu'elle est fillable, castée ou clé
+     * étrangère d'une relation déclarée.
+     */
+    public function test_a_hidden_column_is_never_exposed_whatever_the_allowlist_source(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name', 'price'];
+
+            protected $casts = ['active' => 'boolean'];
+
+            protected $hidden = ['price', 'active', 'category_id'];
+
+            public function category(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+            {
+                return $this->belongsTo(ColumnIntrospectorTestCategory::class);
+            }
+        };
+
+        $exposed = (new ColumnIntrospector)->exposedColumnNames('primary', $instance);
+
+        $this->assertEqualsCanonicalizing(['name', 'id'], $exposed);
+    }
+
+    /**
+     * EX-477 : une liste `$visible` non vide masque toute colonne qu'elle ne
+     * contient pas ; combinée à `$hidden`, ce dernier masque en plus les
+     * colonnes qu'il cite parmi celles de `$visible`.
+     */
+    public function test_a_non_empty_visible_list_hides_every_column_it_omits(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name', 'price', 'active'];
+
+            protected $visible = ['id', 'name', 'price'];
+
+            protected $hidden = ['price'];
+        };
+
+        $introspector = new ColumnIntrospector;
+
+        $this->assertEqualsCanonicalizing(['name', 'id'], $introspector->exposedColumnNames('primary', $instance));
+        $this->assertTrue($introspector->isHidden($instance, 'active'));
+        $this->assertTrue($introspector->isHidden($instance, 'price'));
+        $this->assertFalse($introspector->isHidden($instance, 'name'));
+    }
+
+    /**
+     * EX-479/EX-482 : la clé primaire reste exposée même masquée (par
+     * `$hidden` ou par omission dans `$visible`), et n'est jamais citée
+     * parmi les colonnes masquées.
+     */
+    public function test_the_primary_key_stays_exposed_and_unlisted_even_when_hidden(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name'];
+
+            protected $visible = ['name'];
+        };
+
+        $introspector = new ColumnIntrospector;
+
+        $this->assertContains('id', $introspector->exposedColumnNames('primary', $instance));
+        $this->assertNotContains('id', $introspector->hiddenColumnNames('primary', $instance));
+    }
+
+    /**
+     * EX-482 : noms des colonnes réelles masquées, dans l'ordre du schéma —
+     * y compris une colonne masquée qui n'aurait de toute façon pas été
+     * exposée (`description`, ni fillable ni castée) ; un nom de `$hidden`
+     * sans colonne réelle (accesseur, relation) n'est jamais renvoyé.
+     */
+    public function test_hidden_column_names_lists_real_hidden_columns_in_schema_order(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            protected $fillable = ['name', 'price'];
+
+            protected $hidden = ['description', 'price', 'not_a_column'];
+        };
+
+        $this->assertSame(['price', 'description'], (new ColumnIntrospector)->hiddenColumnNames('primary', $instance));
+    }
+
+    /**
+     * EX-477 : l'attribut PHP `#[Hidden]` (Laravel 13+) masque au même titre
+     * que la propriété `$hidden` — c'est la forme utilisée par le modèle
+     * `User` de l'app de démo.
+     */
+    public function test_the_hidden_php_attribute_hides_a_column(): void
+    {
+        if (! class_exists(\Illuminate\Database\Eloquent\Attributes\Hidden::class)) {
+            $this->markTestSkipped('Attribut #[Hidden] indisponible avant Laravel 13.');
+        }
+
+        $instance = new #[\Illuminate\Database\Eloquent\Attributes\Hidden(['price'])] class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name', 'price'];
+        };
+
+        $this->assertEqualsCanonicalizing(['name', 'id'], (new ColumnIntrospector)->exposedColumnNames('primary', $instance));
+    }
+
+    /**
+     * EX-483 : un modèle sans `$hidden` ni `$visible` n'a aucune colonne
+     * masquée.
+     */
+    public function test_a_model_without_hidden_nor_visible_has_no_hidden_column(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+        };
+
+        $this->assertSame([], (new ColumnIntrospector)->hiddenColumnNames('primary', $instance));
+    }
+
+    /**
+     * EX-480 : le caractère masqué ne dépend que de la déclaration du
+     * modèle — aucune requête n'est émise vers la connexion pour le
+     * déterminer.
+     */
+    public function test_is_hidden_never_queries_the_connection(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            protected $hidden = ['price'];
+        };
+
+        DB::connection('primary')->enableQueryLog();
+        DB::connection('primary')->flushQueryLog();
+
+        $this->assertTrue((new ColumnIntrospector)->isHidden($instance, 'price'));
+        $this->assertSame([], DB::connection('primary')->getQueryLog());
+    }
+
+    /**
      * Une colonne participant à une clé étrangère composite déclarée au
      * niveau du schéma (pas d'une relation Eloquent, cf.
      * test_it_ignores_a_composite_relation_foreign_key ci-dessous) n'est pas

@@ -41,6 +41,9 @@ class ItemDetail extends Component
 
     public array $relations = [];
 
+    /** @var array<int, string> EX-482 : noms seuls, jamais de valeur (EX-481). */
+    public array $hiddenColumns = [];
+
     public ?string $activeRelation = null;
 
     public bool $editing = false;
@@ -68,6 +71,7 @@ class ItemDetail extends Component
         $this->loadItem($items);
 
         $this->columns = $items->columns($connection, $model);
+        $this->hiddenColumns = $items->hiddenColumns($connection, $model);
 
         // EX-425 : une relation belongsTo est déjà représentée comme colonne
         // de clé étrangère (EX-408) — jamais un tableau distinct ici.

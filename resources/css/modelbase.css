@@ -509,6 +509,13 @@ body {
   color: var(--color-hover-text);
 }
 
+/* EX-482 : noms des colonnes masquées par le modèle, sous la fiche */
+.item-detail__hidden-columns {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
 /* ItemForm (module 4, création + édition) */
 .item-form__technical {
   margin: 0;
