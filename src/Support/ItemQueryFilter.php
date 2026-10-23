@@ -11,6 +11,10 @@ use Illuminate\Database\Query\Builder;
  * par `ItemRepository::columnsFor()`, EX-422) avant toute construction de
  * requête — jamais un nom de colonne brut fourni par le client, pour écarter
  * tout risque d'injection via un nom de colonne/direction de tri.
+ *
+ * `$table` qualifie les colonnes par le nom de leur table, nécessaire quand
+ * la requête joint d'autres tables partageant certains noms de colonnes
+ * (relation hasManyThrough/belongsToMany, EX-472).
  */
 class ItemQueryFilter
 {
@@ -26,7 +30,7 @@ class ItemQueryFilter
      *
      * @throws ItemFilterException
      */
-    public function applyFilters(Builder $query, array $filters, array $columnTypes): void
+    public function applyFilters(Builder $query, array $filters, array $columnTypes, ?string $table = null): void
     {
         $errors = [];
 
@@ -38,9 +42,9 @@ class ItemQueryFilter
             }
 
             if ($columnTypes[$column] === ColumnType::STRING) {
-                $query->whereLike($column, '%'.$value.'%');
+                $query->whereLike($this->qualify($column, $table), '%'.$value.'%');
             } else {
-                $query->where($column, $value);
+                $query->where($this->qualify($column, $table), $value);
             }
         }
 
@@ -60,7 +64,7 @@ class ItemQueryFilter
      *
      * @throws ItemFilterException
      */
-    public function applySort(Builder $query, string $sort, array $columnTypes): void
+    public function applySort(Builder $query, string $sort, array $columnTypes, ?string $table = null): void
     {
         $errors = [];
 
@@ -85,11 +89,16 @@ class ItemQueryFilter
                 continue;
             }
 
-            $query->orderBy($column, $direction);
+            $query->orderBy($this->qualify($column, $table), $direction);
         }
 
         if ($errors !== []) {
             throw new ItemFilterException($errors);
         }
+    }
+
+    private function qualify(string $column, ?string $table): string
+    {
+        return $table === null ? $column : $table.'.'.$column;
     }
 }

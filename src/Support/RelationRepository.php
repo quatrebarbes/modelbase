@@ -95,17 +95,22 @@ class RelationRepository
         // propres à la relation (clé étrangère, jointure pivot pour
         // belongsToMany) sont déjà posées par Eloquent à la construction de
         // `$relationQuery` et préservées par toBase().
-        $query = $instance->{$relationName}()->toBase();
+        $relationQuery = $instance->{$relationName}();
+        $table = $relationQuery->getRelated()->getTable();
+        $query = $relationQuery->toBase();
 
         // EX-427 : « même logique d'aperçu que le listing standard » (EX-402)
         // — la ligne renvoyée pour chaque objet lié est restreinte aux
         // colonnes exposées par le modèle lié, jamais la ligne brute complète
-        // de sa table.
+        // de sa table. Colonnes qualifiées par la table du modèle lié : une
+        // relation hasManyThrough/belongsToMany joint une table intermédiaire
+        // qui peut partager certains noms de colonnes (`id`, timestamps…),
+        // sans quoi la requête échoue sur une colonne ambiguë.
         $columnDefinitions = $this->items->columnsFor($descriptor['related_connection'], $relation['related']);
         $columnNames = collect($columnDefinitions)->pluck('name')->all();
 
         if ($columnNames !== []) {
-            $query->select($columnNames);
+            $query->select(array_map(fn (string $column) => $table.'.'.$column, $columnNames));
         }
 
         if ($filters !== [] || ($sort !== null && $sort !== '')) {
@@ -114,11 +119,11 @@ class RelationRepository
                 ->all();
 
             if ($filters !== []) {
-                $this->queryFilter->applyFilters($query, $filters, $columnTypes);
+                $this->queryFilter->applyFilters($query, $filters, $columnTypes, $table);
             }
 
             if ($sort !== null && $sort !== '') {
-                $this->queryFilter->applySort($query, $sort, $columnTypes);
+                $this->queryFilter->applySort($query, $sort, $columnTypes, $table);
             }
         }
 

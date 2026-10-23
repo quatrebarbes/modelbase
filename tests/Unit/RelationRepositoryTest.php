@@ -87,11 +87,27 @@ class RelationRepositoryTest extends TestCase
             $table->string('note')->nullable();
         });
 
+        // Table cible de `RelRepoCategory::reviews()` (hasManyThrough via
+        // `products`) : sa colonne `id` existe aussi dans la table
+        // intermédiaire jointe, d'où une colonne ambiguë si elle n'est pas
+        // qualifiée par le nom de sa table (EX-427, EX-472).
+        Schema::connection('primary')->create('reviews', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('product_id');
+            $table->string('name');
+        });
+
+        DB::connection('primary')->table('reviews')->insert([
+            ['id' => 10, 'product_id' => 1, 'name' => 'Solid'],
+            ['id' => 20, 'product_id' => 2, 'name' => 'Rusty'],
+        ]);
+
         DB::connection('primary')->table('tags')->insert(['id' => 1, 'name' => 'Sharp']);
         DB::connection('primary')->table('product_tag')->insert(['product_id' => 1, 'tag_id' => 1, 'note' => 'fragile']);
 
         $this->putCategoryWithRelation();
         $this->putModel('RelRepoTag', 'tags', 'primary', ['name']);
+        $this->putModel('RelRepoReview', 'reviews', 'primary', ['product_id', 'name']);
         $this->putProductWithRelations();
     }
 
@@ -157,6 +173,7 @@ class RelationRepositoryTest extends TestCase
 
         use Illuminate\Database\Eloquent\Model;
         use Illuminate\Database\Eloquent\Relations\HasMany;
+        use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
         class RelRepoCategory extends Model
         {
@@ -169,6 +186,11 @@ class RelationRepositoryTest extends TestCase
             public function products(): HasMany
             {
                 return \$this->hasMany(RepoProductWithRelations::class, 'category_id');
+            }
+
+            public function reviews(): HasManyThrough
+            {
+                return \$this->hasManyThrough(RelRepoReview::class, RepoProductWithRelations::class, 'category_id', 'product_id');
             }
         }
         PHP);
@@ -445,5 +467,32 @@ class RelationRepositoryTest extends TestCase
         $this->expectException(RelationUnavailableException::class);
 
         $this->repository()->paginateRelated('primary', 'RepoProductWithRelations', '1', 'unreachableSiblings', 1, 15, ['does_not_exist' => 'x']);
+    }
+
+    /**
+     * EX-427 : la requête d'une relation hasManyThrough joint la table
+     * intermédiaire (`products`), qui partage la colonne `id` avec la table
+     * du modèle lié (`reviews`) — les colonnes sélectionnées doivent être
+     * qualifiées par la table du modèle lié pour ne pas être ambiguës.
+     */
+    public function test_paginate_related_selects_the_related_columns_of_a_has_many_through_relation(): void
+    {
+        $page = $this->repository()->paginateRelated('primary', 'RelRepoCategory', '1', 'reviews', 1, 15);
+
+        $this->assertSame(2, $page['meta']['total']);
+        $this->assertEqualsCanonicalizing([10, 20], array_column($page['data'], 'id'));
+    }
+
+    /**
+     * EX-472 : même qualification pour le filtre et le tri, sur une colonne
+     * (`id`) que la table intermédiaire jointe partage avec le modèle lié.
+     */
+    public function test_paginate_related_filters_and_sorts_a_has_many_through_relation_on_a_shared_column_name(): void
+    {
+        $sorted = $this->repository()->paginateRelated('primary', 'RelRepoCategory', '1', 'reviews', 1, 15, [], '-id');
+        $filtered = $this->repository()->paginateRelated('primary', 'RelRepoCategory', '1', 'reviews', 1, 15, ['id' => 20]);
+
+        $this->assertSame([20, 10], array_column($sorted['data'], 'id'));
+        $this->assertSame([20], array_column($filtered['data'], 'id'));
     }
 }
