@@ -49,36 +49,50 @@ class ModelbaseServiceProviderTest extends TestCase
     }
 
     /**
-     * Phase 35 : seul asset du front nécessitant encore un build JS
-     * (Cytoscape.js, diagramme de relations) est publié sous
-     * public/{route_prefix}/diagram-assets, pas public/vendor/... — même
-     * principe que le raccordement à `app.baseURL` d'un front SPA classique
-     * (cf. ModelbaseServiceProvider), pour rester cohérent avec le préfixe
-     * sous lequel le front lui-même (routes/web.php) est servi.
+     * EX-120 : le front n'expose aucun asset à publier — seul le fichier
+     * de config reste publiable.
      */
-    public function test_it_registers_the_diagram_assets_for_publishing_under_the_configured_route_prefix(): void
+    public function test_no_front_asset_is_registered_for_publishing(): void
     {
-        $paths = ServiceProvider::pathsToPublish(ModelbaseServiceProvider::class, 'modelbase-diagram-assets');
+        $paths = ServiceProvider::pathsToPublish(ModelbaseServiceProvider::class);
 
         $this->assertSame([
-            $this->packageRoot().'/resources/dist/modelbase-diagram' => public_path('modelbase/diagram-assets'),
+            $this->packageRoot().'/config/modelbase.php' => config_path('modelbase.php'),
         ], $this->realpaths($paths));
     }
 
     /**
-     * Une app hôte configurant un préfixe de route différent voit ses assets
-     * publiés sous ce même préfixe, pas sous 'modelbase' en dur.
+     * EX-120 : le script du diagramme est inlinable tel quel — un script
+     * classique sans `import`, donc sans étape de build.
      */
-    public function test_the_diagram_assets_publish_destination_follows_a_custom_route_prefix(): void
+    public function test_the_diagram_script_is_a_plain_script_shipped_with_the_package(): void
     {
-        config(['modelbase.route_prefix' => 'custom-prefix']);
+        $path = ModelbaseServiceProvider::diagramScriptPath();
 
-        (new ModelbaseServiceProvider(app()))->boot();
+        $this->assertFileExists($path);
+        $this->assertDoesNotMatchRegularExpression('/^\s*import\s/m', file_get_contents($path));
+    }
 
-        $paths = ServiceProvider::pathsToPublish(ModelbaseServiceProvider::class, 'modelbase-diagram-assets');
+    /**
+     * EX-121 : Cytoscape.js est chargé depuis les trois CDN publics, dans
+     * l'ordre de repli, chacun à la même version figée et sous contrôle
+     * d'intégrité SRI.
+     */
+    public function test_the_diagram_script_loads_cytoscape_from_public_cdns_in_fallback_order(): void
+    {
+        $script = file_get_contents(ModelbaseServiceProvider::diagramScriptPath());
 
-        $this->assertSame([
-            $this->packageRoot().'/resources/dist/modelbase-diagram' => public_path('custom-prefix/diagram-assets'),
-        ], $this->realpaths($paths));
+        preg_match_all("#'(https://[^']+/cytoscape[^']*\.js)'#", $script, $matches);
+
+        $this->assertCount(3, $matches[1]);
+        $this->assertStringStartsWith('https://cdnjs.cloudflare.com/', $matches[1][0]);
+        $this->assertStringStartsWith('https://cdn.jsdelivr.net/', $matches[1][1]);
+        $this->assertStringStartsWith('https://unpkg.com/', $matches[1][2]);
+
+        preg_match_all('/\d+\.\d+\.\d+/', implode(' ', $matches[1]), $versions);
+        $this->assertCount(1, array_unique($versions[0]), 'Les trois CDN doivent servir la même version.');
+
+        $this->assertMatchesRegularExpression("/integrity = CYTOSCAPE_INTEGRITY/", $script);
+        $this->assertMatchesRegularExpression("/CYTOSCAPE_INTEGRITY = 'sha384-[A-Za-z0-9+\/=]+'/", $script);
     }
 }

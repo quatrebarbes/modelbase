@@ -46,17 +46,6 @@ class ModelbaseServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../config/modelbase.php' => config_path('modelbase.php'),
             ], 'modelbase-config');
-
-            // Phase 35 : seul asset du front Livewire nécessitant encore un
-            // build Node (Cytoscape.js, diagramme de relations EX-306 à
-            // EX-311) — quelques Ko, sans rapport avec l'ampleur qu'avait
-            // l'ancien build Nuxt complet (EX-106, supprimée en Phase 37 :
-            // les vues/traductions du front sont chargées directement depuis
-            // le package, cf. loadViewsFrom()/loadTranslationsFrom()
-            // ci-dessous, sans aucune étape vendor:publish).
-            $this->publishes([
-                __DIR__.'/../resources/dist/modelbase-diagram' => public_path(config('modelbase.route_prefix').'/diagram-assets'),
-            ], 'modelbase-diagram-assets');
         }
 
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'modelbase');
@@ -74,5 +63,15 @@ class ModelbaseServiceProvider extends ServiceProvider
     public static function cssPath(): string
     {
         return __DIR__.'/../resources/css/modelbase.css';
+    }
+
+    /**
+     * Chemin du script du diagramme de relations (module 3), inliné par le
+     * layout au même titre que la feuille de style (EX-120) — Cytoscape.js
+     * n'y est pas embarqué mais chargé depuis un CDN public (EX-121).
+     */
+    public static function diagramScriptPath(): string
+    {
+        return __DIR__.'/../resources/js/relation-diagram.js';
     }
 }

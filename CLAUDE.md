@@ -21,7 +21,7 @@ Celui-ci permet de parcourir :
 - Migrations avant models, models avant controllers
 - Tests Feature pour chaque endpoint API et chaque composant Livewire full-page
 - Tests Unit pour chaque fonction
-- Avant de commit un changement dans `resources/js-src/`, relancer `./docker/build-diagram-asset.sh` et committer le résultat dans `resources/dist/modelbase-diagram/` — sinon le build publié via `vendor:publish --tag=modelbase-diagram-assets` reste désynchronisé du code source (seul asset du front nécessitant encore un build, cf. Phase 35)
+- Aucun build JS ni `vendor:publish` d'asset pour le front (EX-120) : CSS et JS du package sont inlinés par le layout ; une bibliothèque tierce (Cytoscape.js) est chargée depuis CDN publics avec repli et SRI (EX-121) — une montée de version impose de recalculer le hash `integrity` (cf. `resources/js/relation-diagram.js`)
 
 ## Documentation
 

@@ -9,9 +9,6 @@ frontend/.nuxt/
 frontend/.output/
 frontend/.data/
 
-# Node (bundle du diagramme de relations, Phase 35 — cf. docker/build-diagram-asset.sh)
-resources/js-src/node_modules/
-resources/js-src/package-lock.json
 
 # Env
 .env

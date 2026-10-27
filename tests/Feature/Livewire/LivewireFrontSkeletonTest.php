@@ -44,6 +44,20 @@ class LivewireFrontSkeletonTest extends TestCase
             ->assertSee(self::FR_TITLE, false);
     }
 
+    public function test_the_layout_inlines_the_diagram_script_without_any_published_asset(): void
+    {
+        // EX-120/EX-121 : le script du diagramme est inliné depuis le
+        // package ; aucune URL ne pointe vers un asset publié dans public/.
+        $user = UserFactory::new()->create();
+
+        $this->actingAs($user)
+            ->get(self::APP_ROOT)
+            ->assertOk()
+            ->assertSee("Alpine.data('modelbaseRelationDiagram'", false)
+            ->assertSee('https://cdnjs.cloudflare.com/ajax/libs/cytoscape/', false)
+            ->assertDontSee('diagram-assets', false);
+    }
+
     public function test_default_locale_is_french_regardless_of_browser_language(): void
     {
         // EX-115 : le français est retenu par défaut sans jamais lire

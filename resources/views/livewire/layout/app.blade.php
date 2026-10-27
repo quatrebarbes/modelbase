@@ -50,16 +50,15 @@
         </template>
     </div>
 
-    @livewireScripts
-
     {{--
-        Phase 35 : bundle Cytoscape.js du diagramme de relations (module 3,
-        EX-306 à EX-311) — seul asset du front Livewire nécessitant un
-        `vendor:publish` (tag modelbase-diagram-assets, cf.
-        ModelbaseServiceProvider). Chargé partout (fichier de quelques Ko) :
-        n'exécute rien tant qu'aucun composant n'invoque
-        `modelbaseRelationDiagram`.
+        EX-120/EX-121 : script du diagramme de relations (module 3) inliné
+        depuis le package comme la feuille de style, avant @livewireScripts
+        pour que son écouteur `alpine:init` soit en place au démarrage
+        d'Alpine. Cytoscape.js n'est téléchargé (depuis un CDN public) qu'au
+        premier affichage du diagramme, jamais sur les autres pages.
     --}}
-    <script src="{{ asset(config('modelbase.route_prefix').'/diagram-assets/relation-diagram.js') }}" defer></script>
+    <script data-navigate-once>{!! file_get_contents(\Quatrebarbes\Modelbase\ModelbaseServiceProvider::diagramScriptPath()) !!}</script>
+
+    @livewireScripts
 </body>
 </html>

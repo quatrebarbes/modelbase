@@ -1,6 +1,8 @@
 # Roadmap
 
-Dernière mise à jour : 2026-10-22 — Phase 38 (masquage des colonnes `$hidden`/`$visible`, module 4 EX-477 à EX-483, EX-302 précisée) développée et close.
+Dernière mise à jour : 2026-10-27 — Phase 40 (Cytoscape.js chargé depuis CDN publics, suppression du build JS et du `vendor:publish` du diagramme, module 1 EX-120/EX-121) développée et close.
+
+Mise à jour précédente : 2026-10-22 — Phase 38 (masquage des colonnes `$hidden`/`$visible`, module 4 EX-477 à EX-483, EX-302 précisée) développée et close.
 
 Mise à jour précédente : 2026-08-20 — second passage d'audit Vue → Blade (toolbar du listing d'items, libellé des liens de clé étrangère), demandé par l'utilisateur après le premier audit exhaustif. Cf. entrée dédiée dans la section « Réécriture du front : Nuxt → Livewire » ci-dessous.
 
@@ -14,7 +16,7 @@ Mise à jour précédente : 2026-08-19 — condensation de ce document (cf. note
 
 Cette roadmap découle des 4 SFD de `docs/sfd/` :
 
-1. Architecture générale (EX-101 à EX-119)
+1. Architecture générale (EX-101 à EX-121)
 2. Bases de données (EX-201 à EX-213, EX-215)
 3. Modèles (EX-301 à EX-316)
 4. Items (EX-401 à EX-456, EX-463 à EX-483)
@@ -388,3 +390,15 @@ Suite et fin de la réécriture du front (cf. section « Réécriture du front :
 **Correctif** : `paginateRelated()` qualifie les colonnes du `select` par la table du modèle lié (`getRelated()->getTable()`) ; `ItemQueryFilter::applyFilters()`/`applySort()` acceptent un paramètre optionnel `$table` qui qualifie les colonnes filtrées/triées (sans effet sur `ItemRepository::paginate()`, qui ne joint aucune table). Les clés des lignes renvoyées restent les noms de colonnes nus.
 
 **Tests** : 2 tests Unit dans `RelationRepositoryTest` (relation `RelRepoCategory::reviews()` hasManyThrough via `products`) — aperçu des colonnes, puis filtre et tri sur `id`. Reproduits en échec avant le correctif (`ambiguous column name: id` sous sqlite). Suite complète : 380 tests au vert.
+
+## Phase 40 — Cytoscape.js depuis CDN publics, sans build ni publication (module 1, EX-120/EX-121) — close
+
+**Constat** : le diagramme de relations (Phase 35) était le seul point du front exigeant un `vendor:publish --tag=modelbase-diagram-assets` dans l'app hôte, et un build Node côté plug-in. Un oubli de publication (ou de republication après mise à jour) cassait silencieusement le diagramme (404, cf. bug d'infrastructure locale ci-dessus).
+
+**Changement** :
+- `resources/js-src/relation-diagram.js` → `resources/js/relation-diagram.js`, script classique (IIFE, sans `import`) inliné par le layout comme la feuille de style (`ModelbaseServiceProvider::diagramScriptPath()`), placé avant `@livewireScripts` (écouteur `alpine:init`) avec `data-navigate-once`.
+- Cytoscape.js 3.34.1 (`cytoscape.min.js`, build UMD) chargé au premier affichage du diagramme seulement, depuis cdnjs puis jsDelivr puis unpkg (EX-121) ; même hash SRI sur les trois (fichier npm identique, vérifié) ; délai de 5 s par CDN pour couvrir un pare-feu qui ignore les paquets ; échec de tous → message `diagramError` existant, nouvel essai à la réouverture.
+- Supprimés : tag `modelbase-diagram-assets`, `resources/dist/modelbase-diagram/`, `resources/js-src/package.json`, `docker/build-diagram-asset.sh`, règle correspondante du CLAUDE.md.
+- Décision : URL du CDN non configurable par l'app hôte (choix utilisateur) — limite assumée, cf. remarque sous EX-121 (réseau sans Internet, CSP).
+
+**Tests** : `ModelbaseServiceProviderTest` (plus aucun asset publiable hors config, script sans `import`, trois CDN dans l'ordre à version unique avec SRI), `LivewireFrontSkeletonTest` (script inliné, aucune référence à `diagram-assets`). Suite complète : 382 tests au vert. Vérifié en navigateur réel (Chromium/Playwright, app de démo) : aucun téléchargement de Cytoscape avant ouverture du diagramme ; repli effectif cdnjs bloqué → jsDelivr, cdnjs+jsDelivr bloqués → unpkg ; cdnjs servant un fichier altéré → rejeté par SRI, repli jsDelivr ; tous bloqués → message d'erreur.
