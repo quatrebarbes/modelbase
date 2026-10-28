@@ -2,6 +2,8 @@
 
 namespace Quatrebarbes\Modelbase\Livewire\Concerns;
 
+use Quatrebarbes\Modelbase\Support\ItemQueryFilter;
+
 /**
  * Encodage du tri partagé avec `Support\ItemQueryFilter::applySort()` — liste
  * de colonnes séparées par des virgules, `-colonne` pour un tri descendant,
@@ -13,6 +15,22 @@ namespace Quatrebarbes\Modelbase\Livewire\Concerns;
  */
 trait FiltersAndSortsColumns
 {
+    /**
+     * EX-492/EX-493 : sépare les filtres saisis (`$this->filters`, conservés
+     * tels quels) entre ceux à appliquer — non vides et valides — et ceux
+     * dont la valeur ne respecte pas le format de leur colonne, ignorés et
+     * signalés avec ce format (EX-494).
+     *
+     * @return array{0: array<string, mixed>, 1: array<string, string>}
+     */
+    protected function partitionFilters(): array
+    {
+        $filters = array_filter($this->filters, fn ($v) => $v !== null && $v !== '');
+        $invalid = app(ItemQueryFilter::class)->invalidFilters($filters, collect($this->columns)->keyBy('column')->all());
+
+        return [array_diff_key($filters, $invalid), $invalid];
+    }
+
     /**
      * @return list<array{column: string, dir: 'asc'|'desc'}>
      */

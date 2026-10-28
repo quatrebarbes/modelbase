@@ -21,7 +21,7 @@ use ReflectionMethod;
 class ColumnIntrospector
 {
     /**
-     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>
+     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool, temporal: ?string, key_format: ?string}>
      */
     public function forTable(string $connection, string $table): array
     {
@@ -44,6 +44,14 @@ class ColumnIntrospector
                     // sans en faire un type de rendu à part (reste
                     // ColumnType::STRING).
                     'long' => $this->isLongText($column),
+                    // EX-488 à EX-490 : nature d'une colonne de type date
+                    // (date seule, date et heure, heure seule), qui fixe le
+                    // format de saisie accepté par son filtre.
+                    'temporal' => $this->temporalKind($column),
+                    // EX-487 : format de la valeur brute, conservé même pour
+                    // une clé étrangère — une saisie incompatible y retient
+                    // simplement aucun item plutôt qu'une erreur SQL (EX-492).
+                    'key_format' => $this->keyFormat($column),
                 ];
             })
             ->all();
@@ -172,7 +180,7 @@ class ColumnIntrospector
      * écritures (`ItemRepository::writable()`) dérivant de cette méthode, ce
      * seul filtre suffit à ne jamais restituer ni accepter sa valeur (EX-481).
      *
-     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>
+     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool, temporal: ?string, key_format: ?string}>
      */
     public function exposedColumns(string $connection, Model $instance): array
     {
@@ -212,8 +220,8 @@ class ColumnIntrospector
      * par un cast — aucun cast Eloquent ne porte cette information — même
      * lorsque le cast fait par ailleurs suivre le type de rendu.
      *
-     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}  $column
-     * @return array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}
+     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool, temporal: ?string, key_format: ?string}  $column
+     * @return array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool, temporal: ?string, key_format: ?string}
      */
     private function applyCastType(array $column, ?string $cast): array
     {
@@ -227,7 +235,15 @@ class ColumnIntrospector
             return $column;
         }
 
-        return [...$column, 'type' => $type->value];
+        // EX-489 : un cast `date` restreint la colonne à une date seule, tout
+        // autre cast de date porte une date et une heure (EX-488).
+        $temporal = match (true) {
+            $type !== ColumnType::DATE => null,
+            in_array(strtolower($cast), ['date', 'immutable_date'], true) => 'date',
+            default => 'datetime',
+        };
+
+        return [...$column, 'type' => $type->value, 'temporal' => $temporal];
     }
 
     /**
@@ -350,6 +366,42 @@ class ColumnIntrospector
                 'decimal', 'numeric', 'float', 'float4', 'float8', 'double', 'double precision', 'real', 'money',
             ], true) => ColumnType::NUMBER,
             default => ColumnType::STRING,
+        };
+    }
+
+    /**
+     * EX-488 à EX-490 : `null` pour une colonne qui n'est pas de type date.
+     *
+     * @param  array{type: string, type_name: string}  $column
+     * @return 'date'|'datetime'|'time'|null
+     */
+    private function temporalKind(array $column): ?string
+    {
+        if ($this->scalarType($column) !== ColumnType::DATE) {
+            return null;
+        }
+
+        return match (strtolower($column['type_name'])) {
+            'date' => 'date',
+            'time', 'timetz' => 'time',
+            default => 'datetime',
+        };
+    }
+
+    /**
+     * EX-487 : `integer` pour une colonne numérique entière, `uuid` pour un
+     * type UUID natif (pgsql `uuid`, sqlsrv `uniqueidentifier`), `null`
+     * sinon (comparaison telle quelle sans risque d'erreur de conversion).
+     *
+     * @param  array{type: string, type_name: string}  $column
+     * @return 'integer'|'uuid'|null
+     */
+    private function keyFormat(array $column): ?string
+    {
+        return match (strtolower($column['type_name'])) {
+            'integer', 'int', 'int2', 'int4', 'int8', 'bigint', 'mediumint', 'smallint', 'tinyint' => 'integer',
+            'uuid', 'uniqueidentifier' => 'uuid',
+            default => null,
         };
     }
 

@@ -193,6 +193,22 @@ body {
   border-color: var(--color-border-focus);
 }
 
+/* EX-494 : filtre dont la saisie est invalide, signalé tant qu'elle le reste */
+.data-table__filter-input--invalid,
+.data-table__filter-input--invalid:hover,
+.data-table__filter-input--invalid:focus {
+  border-color: var(--color-error-text);
+}
+
+.data-table__filter-error {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--color-error-text);
+  font-size: 0.75rem;
+  font-weight: normal;
+  text-align: left;
+}
+
 /* EX-469 : cellule de données tronquée à 3 lignes max, avec ellipse si le contenu déborde */
 .data-table__cell {
   display: -webkit-box;

@@ -98,17 +98,7 @@
                 </tr>
                 <tr class="item-list__filter-row">
                     @foreach ($columns as $column)
-                        <th>
-                            @if ($column['type'] !== 'json')
-                                <input
-                                    type="text"
-                                    class="data-table__filter-input"
-                                    aria-label="{{ $column['column'] }}"
-                                    placeholder="{{ __('modelbase::items.filterPlaceholder') }}"
-                                    wire:model.live.debounce.300ms="filters.{{ $column['column'] }}"
-                                >
-                            @endif
-                        </th>
+                        @include('modelbase::livewire.partials._filter-cell', ['filterErrorPrefix' => 'filter-error'])
                     @endforeach
                 </tr>
             </thead>

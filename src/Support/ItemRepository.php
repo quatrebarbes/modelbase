@@ -104,16 +104,14 @@ class ItemRepository
         if ($filters !== [] || ($sort !== null && $sort !== '')) {
             // EX-432 : colonnes de filtre/tri restreintes à celles exposées
             // par columnsFor() (EX-422), jamais un nom de colonne brut.
-            $columnTypes = collect($columnDefinitions)
-                ->mapWithKeys(fn (array $column) => [$column['name'] => ColumnType::from($column['type'])])
-                ->all();
+            $columns = collect($columnDefinitions)->keyBy('name')->all();
 
             if ($filters !== []) {
-                $this->queryFilter->applyFilters($query, $filters, $columnTypes);
+                $this->queryFilter->applyFilters($query, $filters, $columns);
             }
 
             if ($sort !== null && $sort !== '') {
-                $this->queryFilter->applySort($query, $sort, $columnTypes);
+                $this->queryFilter->applySort($query, $sort, $columns);
             }
         } else {
             // Tri par défaut en l'absence de tri explicite demandé : les items
@@ -508,7 +506,7 @@ class ItemRepository
      * (nombre de propriétés du listing des modèles, EX-302/EX-313, module 3) —
      * cette méthode n'est plus qu'une délégation.
      *
-     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>
+     * @return array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool, temporal: ?string, key_format: ?string}>
      */
     public function columnsFor(string $connection, Model $instance): array
     {
@@ -544,7 +542,7 @@ class ItemRepository
      * préalable produirait une valeur doublement encodée.
      *
      * @param  array<string, mixed>  $values
-     * @param  array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}>  $columnDefinitions
+     * @param  array<int, array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool, temporal: ?string, key_format: ?string}>  $columnDefinitions
      * @return array<string, mixed>
      */
     private function writable(array $values, Model $instance, array $columnDefinitions): array
@@ -616,7 +614,7 @@ class ItemRepository
     }
 
     /**
-     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}  $column
+     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool, temporal: ?string, key_format: ?string}  $column
      * @param  array<int, string>  $technical
      */
     private function describeColumn(string $connection, array $column, array $technical, Model $instance): array
@@ -628,6 +626,12 @@ class ItemRepository
             'fillable' => $instance->isFillable($column['name']), // EX-421
             'long' => $column['long'], // EX-450/EX-463 : texte long (SQL text/mediumtext/longtext)
         ];
+
+        // EX-488 à EX-490 : date seule, date et heure ou heure seule — fixe
+        // le format de saisie du filtre de la colonne.
+        if ($column['type'] === ColumnType::DATE->value) {
+            $described['temporal'] = $column['temporal'] ?? 'datetime';
+        }
 
         if ($column['is_foreign_key']) {
             $model = $this->models->classForTable($connection, $column['foreign_key']['table']);
@@ -642,7 +646,7 @@ class ItemRepository
     }
 
     /**
-     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool}  $column
+     * @param  array{name: string, type: string, is_foreign_key: bool, foreign_key: array{table: string, column: string}|null, long: bool, temporal: ?string, key_format: ?string}  $column
      * @param  array<int, string>  $technical
      */
     private function decorate(Connection $db, string $connection, array $column, mixed $value, array $technical, Model $instance): array

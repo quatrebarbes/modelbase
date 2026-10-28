@@ -222,7 +222,7 @@ class ItemListingTest extends TestCase
     }
 
     /**
-     * EX-433 : filtre « contient » insensible à la casse pour une colonne de
+     * EX-484 : filtre « contient » insensible à la casse pour une colonne de
      * type texte.
      */
     public function test_it_filters_items_with_a_case_insensitive_contains_match_on_a_text_column(): void
@@ -237,7 +237,7 @@ class ItemListingTest extends TestCase
     }
 
     /**
-     * EX-433 : égalité stricte pour une colonne d'un type autre que texte.
+     * EX-487 : égalité stricte sur la valeur brute d'une clé étrangère.
      */
     public function test_it_filters_items_with_a_strict_match_on_a_non_text_column(): void
     {
@@ -376,6 +376,38 @@ class ItemListingTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonStructure(['message', 'errors' => ['does_not_exist']]);
+    }
+
+    /**
+     * EX-495 : une valeur de filtre invalide est rejetée en nommant la
+     * colonne et le format attendu, sans renvoyer d'items.
+     */
+    public function test_it_rejects_an_invalid_filter_value_with_a_422_naming_the_column_and_format(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', [
+            'filter' => ['price' => '9,99', 'created_at' => '2024-02-30'],
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonMissingPath('data');
+        $this->assertSame(['created_at'], array_keys($response->json('errors')));
+        $this->assertStringContainsString('AAAA-MM-JJ', $response->json('errors.created_at.0'));
+    }
+
+    /**
+     * EX-485 : égalité numérique, séparateur décimal point ou virgule.
+     */
+    public function test_it_filters_a_number_column_by_numeric_equality(): void
+    {
+        $user = UserFactory::new()->create();
+
+        $response = $this->actingAs($user)->getJson($this->indexUrl('ListingProduct', ['filter' => ['price' => '9,990']]));
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.name', 'Hammer');
     }
 
     /**

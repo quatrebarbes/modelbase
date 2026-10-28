@@ -101,7 +101,7 @@ class RelationTable extends Component
             return view('modelbase::livewire.relations.table', ['listing' => null]);
         }
 
-        $filters = array_filter($this->filters, fn ($v) => $v !== null && $v !== '');
+        [$filters, $invalidFilters] = $this->partitionFilters();
 
         try {
             $listing = $relations->paginateRelated(
@@ -119,9 +119,10 @@ class RelationTable extends Component
         } catch (ItemFilterException) {
             $this->filters = [];
             $this->sort = '';
+            $invalidFilters = [];
             $listing = $relations->paginateRelated($this->connection, $this->model, $this->item, $this->relation['name'], $this->page, $this->perPage);
         }
 
-        return view('modelbase::livewire.relations.table', ['listing' => $listing]);
+        return view('modelbase::livewire.relations.table', ['listing' => $listing, 'invalidFilters' => $invalidFilters]);
     }
 }

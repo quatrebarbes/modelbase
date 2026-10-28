@@ -1,6 +1,8 @@
 # Roadmap
 
-Dernière mise à jour : 2026-10-27 — Phase 40 (Cytoscape.js chargé depuis CDN publics, suppression du build JS et du `vendor:publish` du diagramme, module 1 EX-120/EX-121) développée et close.
+Dernière mise à jour : 2026-10-27 — Phase 41 (filtre interprété selon le type de colonne, saisie invalide ignorée et signalée, module 4 EX-484 à EX-495, EX-433 supprimée) développée et close.
+
+Mise à jour précédente : 2026-10-27 — Phase 40 (Cytoscape.js chargé depuis CDN publics, suppression du build JS et du `vendor:publish` du diagramme, module 1 EX-120/EX-121) développée et close.
 
 Mise à jour précédente : 2026-10-22 — Phase 38 (masquage des colonnes `$hidden`/`$visible`, module 4 EX-477 à EX-483, EX-302 précisée) développée et close.
 
@@ -19,9 +21,9 @@ Cette roadmap découle des 4 SFD de `docs/sfd/` :
 1. Architecture générale (EX-101 à EX-121)
 2. Bases de données (EX-201 à EX-213, EX-215)
 3. Modèles (EX-301 à EX-316)
-4. Items (EX-401 à EX-456, EX-463 à EX-483)
+4. Items (EX-401 à EX-456, EX-463 à EX-495, EX-433 supprimée)
 
-**Toutes les exigences EX-101 à EX-483 sont développées.** Audit de cohérence SFD ↔ code réalisé le 2026-08-10 (aucun écart trouvé à cette date).
+**Toutes les exigences EX-101 à EX-495 sont développées.** Audit de cohérence SFD ↔ code réalisé le 2026-08-10 (aucun écart trouvé à cette date).
 
 ## Points d'attention transverses, toujours valables
 
@@ -402,3 +404,21 @@ Suite et fin de la réécriture du front (cf. section « Réécriture du front :
 - Décision : URL du CDN non configurable par l'app hôte (choix utilisateur) — limite assumée, cf. remarque sous EX-121 (réseau sans Internet, CSP).
 
 **Tests** : `ModelbaseServiceProviderTest` (plus aucun asset publiable hors config, script sans `import`, trois CDN dans l'ordre à version unique avec SRI), `LivewireFrontSkeletonTest` (script inliné, aucune référence à `diagram-assets`). Suite complète : 382 tests au vert. Vérifié en navigateur réel (Chromium/Playwright, app de démo) : aucun téléchargement de Cytoscape avant ouverture du diagramme ; repli effectif cdnjs bloqué → jsDelivr, cdnjs+jsDelivr bloqués → unpkg ; cdnjs servant un fichier altéré → rejeté par SRI, repli jsDelivr ; tous bloqués → message d'erreur.
+
+## Phase 41 — Filtre selon le type de colonne, saisie invalide (module 4, EX-484 à EX-495 ; EX-433 supprimée, EX-470 étendue) — close
+
+**Constat** : EX-433 imposait une égalité stricte pour tout type autre que texte — un filtre `2024` sur une date ne retenait rien, `12,5` sur un nombre non plus, et une saisie incompatible avec le type SQL (ex. `abc` sur un entier pgsql) faisait échouer la requête.
+
+**Changement** :
+- `ColumnIntrospector::forTable()` ajoute à chaque colonne `temporal` (`date`/`datetime`/`time`, déduit du `type_name` ; un cast `date`/`immutable_date` force `date`, tout autre cast de date `datetime`) et `key_format` (`integer`/`uuid`/`null`). `ItemRepository::describeColumn()` expose `temporal` pour une colonne de type date (front, et `/columns` de l'API).
+- `ItemQueryFilter` reçoit désormais les définitions de colonnes indexées par nom (plus seulement leur `ColumnType`). Nouvelles méthodes publiques `invalidFilters()` (EX-492) et `expectedFormat()`. Règles : texte « contient » (EX-484) ; nombre — entier lié tel quel, décimal comparé en `colonne * 1.0 = ? * 1.0` (pgsql refuse `12.5` face à un entier ; sqlite ne compare jamais égaux un réel et un texte) (EX-485) ; booléen `'1'`/`'0'` (EX-486, `true`/`false` acceptés aussi via l'API) ; clé étrangère en égalité stricte, une saisie non entière/non UUID face à une clé `integer`/`uuid` ne retenant aucun item (`1 = 0`) plutôt qu'une erreur SQL (EX-487/EX-492) ; date/heure en période `[début ; début suivant[`, bornes formatées dans le format de stockage de la colonne, sans conversion de fuseau (EX-488 à EX-491).
+- API : une valeur invalide rejette la requête en 422 au même titre qu'une colonne inconnue, message nommant la colonne et le format (EX-495).
+- Front (`ItemListing`, `RelationTable`) : `FiltersAndSortsColumns::partitionFilters()` écarte les filtres invalides avant `paginate()` sans toucher `$filters` (saisie conservée, EX-493). Partiel commun `partials/_filter-cell.blade.php` : liste Tous/Oui/Non pour un booléen (EX-486) ; champ invalide signalé (`data-table__filter-input--invalid`, `aria-invalid`, `aria-describedby`) avec message du format attendu (`items.filterInvalid.*`, EX-494).
+
+**Décisions** :
+- Booléen via l'API : EX-492 ne cite pas de format pour ce type ; une valeur autre que `1`/`0`/`true`/`false` est néanmoins traitée comme invalide (sinon erreur SQL sur pgsql, contraire à EX-492).
+- Nombre : `12.` et `.5` acceptés (« au plus un séparateur ») ; `+12`, espaces, notation scientifique refusés.
+- Heure seule `23` et année `9999` : pas de borne supérieure (période suivante hors domaine).
+- Caractères `%`/`_` saisis dans un filtre texte toujours interprétés comme jokers LIKE (inchangé).
+
+**Tests** : `ItemQueryFilterTest` réécrit (16 tests : chaque type, périodes, saisies invalides/inexistantes, rejet nommant colonne et format), 3 tests `ColumnIntrospectorTest` (`temporal`, cast de date, `key_format`), 2 tests API `ItemListingTest` (422 sur valeur invalide, égalité numérique à virgule), `ItemFilterInputTest` Livewire (5 tests : filtre invalide ignoré et conservé, signalement et message, tableau d'objets liés, liste booléenne). Suite complète : 401 tests au vert. Vérifié par script jetable contre mysql 8.4 et pgsql 16 (docker-compose) : mêmes résultats que sqlite sur chaque type (dont `timestamptz`, `uuid`, `double`, entier hors bornes PHP), aucune erreur SQL. **Non fait** : vérification visuelle en navigateur du signalement (bordure, message sous le champ, largeur de colonne).

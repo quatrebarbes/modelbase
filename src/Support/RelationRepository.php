@@ -114,16 +114,14 @@ class RelationRepository
         }
 
         if ($filters !== [] || ($sort !== null && $sort !== '')) {
-            $columnTypes = collect($columnDefinitions)
-                ->mapWithKeys(fn (array $column) => [$column['name'] => ColumnType::from($column['type'])])
-                ->all();
+            $columns = collect($columnDefinitions)->keyBy('name')->all();
 
             if ($filters !== []) {
-                $this->queryFilter->applyFilters($query, $filters, $columnTypes, $table);
+                $this->queryFilter->applyFilters($query, $filters, $columns, $table);
             }
 
             if ($sort !== null && $sort !== '') {
-                $this->queryFilter->applySort($query, $sort, $columnTypes, $table);
+                $this->queryFilter->applySort($query, $sort, $columns, $table);
             }
         }
 

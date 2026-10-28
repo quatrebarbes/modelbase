@@ -481,6 +481,67 @@ class ColumnIntrospectorTest extends TestCase
      * schéma — ici une colonne `name` (schéma STRING) castée `array` doit
      * être rendue comme JSON.
      */
+    /**
+     * EX-488 à EX-490 : nature d'une colonne de type date, déduite du schéma.
+     */
+    public function test_it_distinguishes_date_datetime_and_time_columns(): void
+    {
+        Schema::connection('primary')->create('events', function (Blueprint $table) {
+            $table->id();
+            $table->date('day');
+            $table->dateTime('starts_at');
+            $table->time('opens_at');
+            $table->string('label');
+        });
+
+        $columns = collect((new ColumnIntrospector)->forTable('primary', 'events'))->keyBy('name');
+
+        $this->assertSame('date', $columns['day']['temporal']);
+        $this->assertSame('datetime', $columns['starts_at']['temporal']);
+        $this->assertSame('time', $columns['opens_at']['temporal']);
+        $this->assertNull($columns['label']['temporal']);
+    }
+
+    /**
+     * EX-488/EX-489 : un cast de date fixe la nature de la colonne ; un cast
+     * non temporel l'annule.
+     */
+    public function test_a_date_cast_sets_the_temporal_kind(): void
+    {
+        $instance = new class extends \Illuminate\Database\Eloquent\Model
+        {
+            protected $connection = 'primary';
+
+            protected $table = 'products';
+
+            public $timestamps = false;
+
+            protected $fillable = ['name'];
+
+            protected $casts = ['published_at' => 'date', 'name' => 'datetime', 'price' => 'immutable_datetime'];
+        };
+
+        $columns = collect((new ColumnIntrospector)->exposedColumns('primary', $instance))->keyBy('name');
+
+        $this->assertSame('date', $columns['published_at']['temporal']);
+        $this->assertSame('datetime', $columns['name']['temporal']);
+        $this->assertSame(ColumnType::DATE->value, $columns['price']['type']);
+        $this->assertSame('datetime', $columns['price']['temporal']);
+    }
+
+    /**
+     * EX-487 : format de la valeur brute conservé pour une clé étrangère.
+     */
+    public function test_it_records_the_key_format_of_a_column(): void
+    {
+        $columns = $this->describeProducts();
+
+        $this->assertSame(ColumnType::FOREIGN_KEY->value, $columns['category_id']['type']);
+        $this->assertSame('integer', $columns['category_id']['key_format']);
+        $this->assertSame('integer', $columns['id']['key_format']);
+        $this->assertNull($columns['name']['key_format']);
+    }
+
     public function test_a_recognized_cast_overrides_the_schema_deduced_type(): void
     {
         $instance = new class extends \Illuminate\Database\Eloquent\Model

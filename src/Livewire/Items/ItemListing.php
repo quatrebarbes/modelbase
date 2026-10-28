@@ -143,7 +143,7 @@ class ItemListing extends Component
 
     public function render(ItemRepository $items)
     {
-        $filters = array_filter($this->filters, fn ($v) => $v !== null && $v !== '');
+        [$filters, $invalidFilters] = $this->partitionFilters();
 
         try {
             $listing = $items->paginate(
@@ -161,6 +161,7 @@ class ItemListing extends Component
             // état propre plutôt qu'une page en erreur.
             $this->filters = [];
             $this->sort = '';
+            $invalidFilters = [];
             $listing = $items->paginate($this->connection, $this->model, $this->page, max(1, $this->perPage));
         }
 
@@ -169,6 +170,6 @@ class ItemListing extends Component
         // qui ne correspond plus aux données rendues.
         $this->page = $listing['meta']['current_page'];
 
-        return view('modelbase::livewire.items.listing', ['listing' => $listing]);
+        return view('modelbase::livewire.items.listing', ['listing' => $listing, 'invalidFilters' => $invalidFilters]);
     }
 }

@@ -347,7 +347,7 @@ class ItemRepositoryTest extends TestCase
     }
 
     /**
-     * EX-433 : filtre « contient » insensible à la casse pour une colonne de
+     * EX-484 : filtre « contient » insensible à la casse pour une colonne de
      * type texte.
      */
     public function test_paginate_filters_items_with_a_case_insensitive_contains_match_on_a_text_column(): void
@@ -359,7 +359,7 @@ class ItemRepositoryTest extends TestCase
     }
 
     /**
-     * EX-433 : égalité stricte pour une colonne d'un type autre que texte
+     * EX-485 à EX-487 : filtre selon le type d'une colonne autre que texte
      * (ici une clé étrangère).
      */
     public function test_paginate_filters_items_with_a_strict_match_on_a_non_text_column(): void

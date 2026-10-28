@@ -350,7 +350,7 @@ class ItemRelationsTest extends TestCase
     }
 
     /**
-     * EX-470/EX-433 : filtre "contient" insensible à la casse sur une colonne
+     * EX-470/EX-484 : filtre "contient" insensible à la casse sur une colonne
      * texte du modèle lié, même comportement que le listing standard (EX-432
      * à EX-434).
      */

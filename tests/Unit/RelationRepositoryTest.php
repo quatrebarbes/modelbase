@@ -389,7 +389,7 @@ class RelationRepositoryTest extends TestCase
     }
 
     /**
-     * EX-470/EX-433 : filtre "contient" insensible à la casse sur une colonne
+     * EX-470/EX-484 : filtre "contient" insensible à la casse sur une colonne
      * texte du modèle lié, même comportement que le listing standard.
      */
     public function test_paginate_related_filters_rows_by_column_value(): void
